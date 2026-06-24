@@ -16,7 +16,7 @@ export default function InventoryTable({ inventory, onEdit, onDelete }) {
       <table>
         <thead>
           <tr>
-            <th>Image</th><th>Name</th><th>Type</th><th>Price</th><th>THC</th><th>CBD</th><th>Potency</th><th>Inventory Quantity</th><th>Featured</th><th>Actions</th>
+            <th>Image</th><th>Name</th><th>Type</th><th>Pickup Price</th><th>Online Price</th><th>Potency</th><th>Availability</th><th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -27,12 +27,10 @@ export default function InventoryTable({ inventory, onEdit, onDelete }) {
               </td>
               <td data-label="Name">{strain.name}</td>
               <td data-label="Type">{strain.strainType}</td>
-              <td data-label="Price">{money(strain.price)}</td>
-              <td data-label="THC">{strain.thc}%</td>
-              <td data-label="CBD">{strain.cbd}%</td>
+              <td data-label="Pickup Price">{money(strain.price)}</td>
+              <td data-label="Online Price">{money(strain.onlinePrice ?? strain.price)}</td>
               <td data-label="Potency">{strain.potency}</td>
-              <td data-label="Quantity">{strain.quantity}</td>
-              <td data-label="Featured">{strain.featured ? "Yes" : "No"}</td>
+              <td data-label="Availability">{(strain.available ?? Number(strain.quantity ?? 0) > 0) ? "Available" : "Not Available"}</td>
               <td className="actions">
                 <div className="action-group">
                   <button className="icon-button" onClick={() => onEdit(strain)} title="Edit strain"><Edit size={17} /></button>
