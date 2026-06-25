@@ -222,7 +222,7 @@ export default function Dashboard({ onLogout }) {
             <p><strong>Pickup</strong>{viewOrder.pickupDate} at {viewOrder.pickupTime}</p>
             <p><strong>Status</strong>{viewOrder.status}</p>
             <p><strong>Total</strong>{money(viewOrder.total)}</p>
-            <p><strong>Promo</strong>{viewOrder.promo ? `${viewOrder.promo.label}${viewOrder.promo.discountAmount ? ` - ${money(viewOrder.promo.discountAmount)} discount` : ""}${viewOrder.promo.extraGram ? " - add extra 1g" : ""}` : "None"}</p>
+            <p><strong>Promo</strong>{viewOrder.promo ? `${viewOrder.promo.label}${viewOrder.promo.discountAmount ? ` - ${money(viewOrder.promo.discountAmount)} discount` : ""}${viewOrder.promo.extraGram ? " - add extra 1g" : ""}${viewOrder.promo.extraEighth ? " - add free 1/8th" : ""}` : "None"}</p>
           </div>
           <h3>Products Ordered</h3>
           {viewOrder.items?.map(item => <p key={`${item.productId}-${item.name}`}>{item.name} x {item.quantity}</p>)}
