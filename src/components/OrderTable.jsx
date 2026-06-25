@@ -1,8 +1,6 @@
 import { Eye, Trash2 } from "lucide-react";
 import { money } from "../lib/format.js";
 
-const statuses = ["Pending", "Ready", "Completed", "Cancelled"];
-
 function promoText(order) {
   if (!order.promo) return "-";
   const parts = [order.promo.label];
@@ -18,21 +16,30 @@ function promoText(order) {
   return parts.join(" - ");
 }
 
-export default function OrderTable({ orders, onView, onStatus, onDelete }) {
+export default function OrderTable({ orders, selectedIds = [], onToggle, onView, onDelete }) {
   if (orders === undefined) return <div className="state-card">Loading orders...</div>;
   if (!orders.length) return <div className="state-card">No orders match the current filters.</div>;
+  const selected = new Set(selectedIds);
 
   return (
-    <div className="table-wrap">
+    <div className="table-wrap responsive-admin-table order-table">
       <table>
         <thead>
           <tr>
-            <th>Order Number</th><th>Customer Name</th><th>Phone</th><th>Pickup Date</th><th>Pickup Time</th><th>Products Ordered</th><th>Quantities</th><th>Promo</th><th>Total</th><th>Payment</th><th>Status</th><th>Actions</th>
+            <th className="select-cell">Select</th><th>Order Number</th><th>Customer Name</th><th>Phone</th><th>Pickup Date</th><th>Pickup Time</th><th>Products Ordered</th><th>Quantities</th><th>Promo</th><th>Total</th><th>Payment</th><th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {orders.map(order => (
             <tr key={order._id}>
+              <td className="select-cell" data-label="Select">
+                <input
+                  type="checkbox"
+                  checked={selected.has(order._id)}
+                  onChange={() => onToggle(order._id)}
+                  aria-label={`Select order ${order.orderNumber}`}
+                />
+              </td>
               <td data-label="Order">{order.orderNumber}</td>
               <td data-label="Customer">{order.customerName}</td>
               <td data-label="Phone">{order.phone}</td>
@@ -46,11 +53,6 @@ export default function OrderTable({ orders, onView, onStatus, onDelete }) {
                 <span className={`payment-status ${order.paymentStatus || "pending"}`}>
                   {order.paymentMethod === "stripe" ? "Online" : "Store"} - {order.paymentStatus || "pending"}
                 </span>
-              </td>
-              <td data-label="Status">
-                <select value={order.status} onChange={event => onStatus(order._id, event.target.value)}>
-                  {statuses.map(status => <option key={status}>{status}</option>)}
-                </select>
               </td>
               <td className="actions">
                 <div className="action-group">
