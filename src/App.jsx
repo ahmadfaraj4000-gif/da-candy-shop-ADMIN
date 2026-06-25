@@ -11,7 +11,7 @@ export default function App({ missingConvexUrl = false }) {
     <ToastProvider>
       {missingConvexUrl && (
         <div className="env-warning">
-          Add <code>VITE_CONVEX_URL</code> to <code>admin/.env.local</code> to connect live Convex data.
+          Add <code>VITE_CONVEX_URL</code> to <code>admin/.env.local</code> to connect the admin dashboard.
         </div>
       )}
       <Routes>
