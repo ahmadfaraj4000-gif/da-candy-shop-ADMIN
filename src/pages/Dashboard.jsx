@@ -13,7 +13,7 @@ import { useToast } from "../components/Toast.jsx";
 import { money } from "../lib/format.js";
 import { useDebounce } from "../hooks/useDebounce.js";
 
-const blankStrain = { name: "", strainType: "Hybrid", price: 10, onlinePrice: 10, potency: "Medium", description: "", image: "", available: true };
+const blankStrain = { name: "", strainType: "Hybrid", price: 10, onlinePrice: 10, grams: 3.5, potency: "Medium", description: "", image: "", available: true };
 const convexApi = {
   orders: {
     listOrders: makeFunctionReference("orders:listOrders"),
@@ -308,6 +308,7 @@ export default function Dashboard({ adminToken, onLogout }) {
     try {
       const pickupPrice = numberFromForm(form.price);
       const onlinePrice = numberFromForm(form.onlinePrice, pickupPrice);
+      const grams = numberFromForm(form.grams, 3.5);
       const uploadedImage = await imageFileToDataUrl(formData.get("imageFile"));
       const image = uploadedImage || String(form.image || "").trim() || editing?.image || "";
 
@@ -321,6 +322,7 @@ export default function Dashboard({ adminToken, onLogout }) {
         potency: form.potency,
         price: pickupPrice,
         onlinePrice,
+        grams,
         available: form.available === "on"
       });
       setEditing(null);
@@ -541,6 +543,7 @@ export default function Dashboard({ adminToken, onLogout }) {
             <label>Type <select name="strainType" defaultValue={editing.strainType}><option>Indica</option><option>Sativa</option><option>Hybrid</option></select></label>
             <label>Pickup Price <input name="price" type="number" step="0.01" min="0.01" defaultValue={editing.price} required /></label>
             <label>Online Price <input name="onlinePrice" type="number" step="0.01" min="0.01" defaultValue={editing.onlinePrice ?? editing.price} required /></label>
+            <label>Grams <input name="grams" type="number" step="0.1" min="0.1" defaultValue={editing.grams ?? 3.5} required /></label>
             <label>Potency <select name="potency" defaultValue={editing.potency}><option>Low</option><option>Medium</option><option>High</option></select></label>
             <label>Image URL <input name="image" defaultValue={editing.image?.startsWith("data:") ? "" : editing.image} placeholder="Paste image URL or upload below" /></label>
             <label>Upload Image <input name="imageFile" type="file" accept="image/*" onChange={handleImageFileChange} /></label>
@@ -665,7 +668,7 @@ function PrizeWheelPanel({ prizes, rules, mode, onModeChange, onChanceChange, on
             <button className="primary-button" type="button" onClick={onSaveOdds}>Save Odds</button>
             <button className="icon-button" type="button" onClick={onResetOdds}>Reset Odds</button>
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap responsive-admin-table prize-wheel-table">
             <table>
               <thead>
                 <tr><th>Prize</th><th>Chance</th><th>Reward Settings</th></tr>
