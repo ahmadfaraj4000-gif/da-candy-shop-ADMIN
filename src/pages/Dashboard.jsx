@@ -27,8 +27,15 @@ const convexApi = {
   },
   payments: {
     listInStorePayments: makeFunctionReference("payments:listInStorePayments")
+  },
+  discountCodes: {
+    listDiscountCodes: makeFunctionReference("discountCodes:listDiscountCodes"),
+    upsertDiscountCode: makeFunctionReference("discountCodes:upsertDiscountCode"),
+    deleteDiscountCode: makeFunctionReference("discountCodes:deleteDiscountCode")
   }
 };
+
+const blankDiscountCode = { code: "", type: "percent", value: 10, active: true, maxUses: undefined, expiresAt: "", note: "" };
 
 function imageFileToDataUrl(file) {
   if (!file || file.size === 0) return Promise.resolve("");
@@ -71,7 +78,22 @@ function numberFromForm(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-export default function Dashboard({ onLogout }) {
+function promoDetail(order) {
+  if (!order?.promo) return "None";
+  const parts = [order.promo.label];
+
+  if (order.promo.discountAmount) parts.push(`${money(order.promo.discountAmount)} discount`);
+  if (order.promo.extraGram) parts.push("add extra 1g");
+  if (order.promo.extraEighth) parts.push("add free 1/8th");
+  if (order.paymentMethod === "pay_at_store") parts.push("customer chose pay at store; honor after completed pickup purchase");
+  if (order.paymentMethod === "stripe" && order.paymentStatus === "paid" && order.promo.discountAmount) parts.push("discount applied online");
+  if (order.paymentMethod === "stripe" && order.paymentStatus === "paid" && (order.promo.extraGram || order.promo.extraEighth)) parts.push("paid online; give reward at pickup");
+  if (order.paymentMethod === "stripe" && order.paymentStatus !== "paid") parts.push("online checkout pending");
+
+  return parts.join(" - ");
+}
+
+export default function Dashboard({ adminToken, onLogout }) {
   const [activeTab, setActiveTab] = useState("orders");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
@@ -79,19 +101,23 @@ export default function Dashboard({ onLogout }) {
   const [viewOrder, setViewOrder] = useState(null);
   const [deleteOrderTarget, setDeleteOrderTarget] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [editingDiscount, setEditingDiscount] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
   const toast = useToast();
   const debouncedSearch = useDebounce(search);
 
-  const orderArgs = status ? { search: debouncedSearch, status } : { search: debouncedSearch };
+  const orderArgs = status ? { adminToken, search: debouncedSearch, status } : { adminToken, search: debouncedSearch };
   const inventoryArgs = type ? { search: debouncedSearch, strainType: type } : { search: debouncedSearch };
   const orders = useQuery(convexApi.orders.listOrders, orderArgs);
   const inventory = useQuery(convexApi.inventory.listInventory, inventoryArgs);
-  const qrPayments = useQuery(convexApi.payments.listInStorePayments, {});
+  const qrPayments = useQuery(convexApi.payments.listInStorePayments, { adminToken });
+  const discountCodes = useQuery(convexApi.discountCodes.listDiscountCodes, { adminToken });
   const updateStatus = useMutation(convexApi.orders.updateOrderStatus);
   const deleteOrder = useMutation(convexApi.orders.deleteOrder);
   const upsertStrain = useMutation(convexApi.inventory.upsertStrain);
   const deleteStrain = useMutation(convexApi.inventory.deleteStrain);
+  const upsertDiscountCode = useMutation(convexApi.discountCodes.upsertDiscountCode);
+  const deleteDiscountCode = useMutation(convexApi.discountCodes.deleteDiscountCode);
 
   useEffect(() => {
     setImagePreview(editing?.image || "");
@@ -109,7 +135,7 @@ export default function Dashboard({ onLogout }) {
   }, [orders, qrPayments]);
 
   async function handleStatus(id, nextStatus) {
-    await updateStatus({ id, status: nextStatus });
+    await updateStatus({ adminToken, id, status: nextStatus });
     toast.push("Order status updated.");
   }
 
@@ -119,14 +145,14 @@ export default function Dashboard({ onLogout }) {
 
   async function confirmDeleteOrder() {
     if (!deleteOrderTarget) return;
-    await deleteOrder({ id: deleteOrderTarget._id });
+    await deleteOrder({ adminToken, id: deleteOrderTarget._id });
     setDeleteOrderTarget(null);
     toast.push("Order deleted.");
   }
 
   async function handleDeleteStrain(id) {
     if (!confirm("Delete this strain?")) return;
-    await deleteStrain({ id });
+    await deleteStrain({ adminToken, id });
     toast.push("Strain deleted.");
   }
 
@@ -146,6 +172,7 @@ export default function Dashboard({ onLogout }) {
       const image = uploadedImage || String(form.image || "").trim() || editing?.image || "";
 
       await upsertStrain({
+        adminToken,
         id: editing?._id,
         name: form.name,
         strainType: form.strainType,
@@ -163,6 +190,38 @@ export default function Dashboard({ onLogout }) {
       submitButton.disabled = false;
       submitButton.textContent = "Save Strain";
     }
+  }
+
+  async function saveDiscountCode(event) {
+    event.preventDefault();
+    const form = Object.fromEntries(new FormData(event.currentTarget));
+    const type = form.type;
+    const value = type === "free_1g" || type === "free_eighth" ? undefined : numberFromForm(form.value);
+    const maxUses = form.maxUses ? numberFromForm(form.maxUses) : undefined;
+    const expiresAt = form.expiresAt ? new Date(`${form.expiresAt}T23:59:59`).getTime() : undefined;
+
+    try {
+      await upsertDiscountCode({
+        adminToken,
+        id: editingDiscount?._id,
+        code: form.code,
+        type,
+        value,
+        active: form.active === "on",
+        maxUses,
+        expiresAt,
+        note: form.note
+      });
+      setEditingDiscount(null);
+      toast.push("Discount code saved.");
+    } catch (error) {
+      toast.push(error.message || "Discount code could not be saved.", "error");
+    }
+  }
+
+  async function handleDeleteDiscountCode(id) {
+    await deleteDiscountCode({ adminToken, id });
+    toast.push("Discount code deleted.");
   }
 
   async function handleImageFileChange(event) {
@@ -197,6 +256,7 @@ export default function Dashboard({ onLogout }) {
             {activeTab === "orders" && <Filters status={status} onStatusChange={setStatus} />}
             {activeTab === "inventory" && <Filters type={type} onTypeChange={setType} />}
             {activeTab === "inventory" && <button className="primary-button" onClick={() => setEditing(blankStrain)}><Plus size={18} /> Add Strain</button>}
+            {activeTab === "discounts" && <button className="primary-button" onClick={() => setEditingDiscount(blankDiscountCode)}><Plus size={18} /> Add Code</button>}
           </div>
           {activeTab === "orders" && (
             <OrderTable orders={orders} onView={setViewOrder} onStatus={handleStatus} onDelete={handleDeleteOrder} />
@@ -207,7 +267,10 @@ export default function Dashboard({ onLogout }) {
           {activeTab === "inventory" && (
             <InventoryTable inventory={inventory} onEdit={setEditing} onDelete={handleDeleteStrain} />
           )}
-          {!["orders", "payments", "inventory"].includes(activeTab) && (
+          {activeTab === "discounts" && (
+            <DiscountCodeTable codes={discountCodes} onEdit={setEditingDiscount} onDelete={handleDeleteDiscountCode} />
+          )}
+          {!["orders", "payments", "inventory", "discounts"].includes(activeTab) && (
             <div className="state-card">Choose an admin section.</div>
           )}
         </section>
@@ -222,7 +285,7 @@ export default function Dashboard({ onLogout }) {
             <p><strong>Pickup</strong>{viewOrder.pickupDate} at {viewOrder.pickupTime}</p>
             <p><strong>Status</strong>{viewOrder.status}</p>
             <p><strong>Total</strong>{money(viewOrder.total)}</p>
-            <p><strong>Promo</strong>{viewOrder.promo ? `${viewOrder.promo.label}${viewOrder.promo.discountAmount ? ` - ${money(viewOrder.promo.discountAmount)} discount` : ""}${viewOrder.promo.extraGram ? " - add extra 1g" : ""}${viewOrder.promo.extraEighth ? " - add free 1/8th" : ""}` : "None"}</p>
+            <p><strong>Promo</strong>{promoDetail(viewOrder)}</p>
           </div>
           <h3>Products Ordered</h3>
           {viewOrder.items?.map(item => <p key={`${item.productId}-${item.name}`}>{item.name} x {item.quantity}</p>)}
@@ -267,6 +330,28 @@ export default function Dashboard({ onLogout }) {
           </form>
         </Modal>
       )}
+
+      {editingDiscount && (
+        <Modal title={editingDiscount._id ? "Edit Discount Code" : "Add Discount Code"} onClose={() => setEditingDiscount(null)}>
+          <form className="strain-form" onSubmit={saveDiscountCode}>
+            <label>Code <input name="code" defaultValue={editingDiscount.code} required /></label>
+            <label>Type
+              <select name="type" defaultValue={editingDiscount.type}>
+                <option value="percent">Percent Off</option>
+                <option value="fixed">Dollar Amount Off</option>
+                <option value="free_1g">Free 1g</option>
+                <option value="free_eighth">Free 1/8th</option>
+              </select>
+            </label>
+            <label>Value <input name="value" type="number" step="0.01" min="0" defaultValue={editingDiscount.value ?? ""} /></label>
+            <label>Max Uses <input name="maxUses" type="number" min="1" defaultValue={editingDiscount.maxUses ?? ""} /></label>
+            <label>Expires <input name="expiresAt" type="date" defaultValue={editingDiscount.expiresAt ? new Date(editingDiscount.expiresAt).toISOString().slice(0, 10) : ""} /></label>
+            <label className="checkbox-row"><input name="active" type="checkbox" defaultChecked={editingDiscount.active ?? true} /> Active</label>
+            <label className="wide">Note <textarea name="note" rows="3" defaultValue={editingDiscount.note || ""} /></label>
+            <button className="primary-button wide" type="submit">Save Code</button>
+          </form>
+        </Modal>
+      )}
     </>
   );
 }
@@ -305,6 +390,49 @@ function QrPaymentTable({ payments, search }) {
               <td data-label="Stripe Session">{payment.stripeSessionId || "-"}</td>
               <td data-label="Payment Intent">{payment.stripePaymentIntentId || "-"}</td>
               <td data-label="Created">{new Date(payment.createdAt).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function discountLabel(code) {
+  if (code.type === "percent") return `${code.value}% off`;
+  if (code.type === "fixed") return `${money(code.value)} off`;
+  if (code.type === "free_1g") return "Free 1g";
+  if (code.type === "free_eighth") return "Free 1/8th";
+  return code.type;
+}
+
+function DiscountCodeTable({ codes, onEdit, onDelete }) {
+  if (codes === undefined) return <div className="state-card">Loading discount codes...</div>;
+  if (!codes.length) return <div className="state-card">No discount codes yet.</div>;
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th><th>Reward</th><th>Status</th><th>Uses</th><th>Expires</th><th>Note</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {codes.map(code => (
+            <tr key={code._id}>
+              <td data-label="Code">{code.code}</td>
+              <td data-label="Reward">{discountLabel(code)}</td>
+              <td data-label="Status"><span className={`payment-status ${code.active ? "paid" : "failed"}`}>{code.active ? "Active" : "Inactive"}</span></td>
+              <td data-label="Uses">{code.uses}{code.maxUses ? ` / ${code.maxUses}` : ""}</td>
+              <td data-label="Expires">{code.expiresAt ? new Date(code.expiresAt).toLocaleDateString() : "-"}</td>
+              <td data-label="Note">{code.note || "-"}</td>
+              <td className="actions">
+                <div className="action-group">
+                  <button className="icon-button" type="button" onClick={() => onEdit(code)}>Edit</button>
+                  <button className="icon-button danger" type="button" onClick={() => onDelete(code._id)}>Delete</button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
