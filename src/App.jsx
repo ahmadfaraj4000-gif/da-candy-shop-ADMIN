@@ -18,7 +18,7 @@ export default function App({ missingConvexUrl = false }) {
         <Route path="/" element={auth.isAuthed ? <Navigate to="/dashboard" /> : <Login onLogin={auth.login} />} />
         <Route
           path="/dashboard"
-          element={auth.isAuthed ? (missingConvexUrl ? <ConvexSetup onLogout={auth.logout} /> : <Dashboard onLogout={auth.logout} />) : <Navigate to="/" />}
+          element={auth.isAuthed ? (missingConvexUrl ? <ConvexSetup onLogout={auth.logout} /> : <Dashboard adminToken={auth.token} onLogout={auth.logout} />) : <Navigate to="/" />}
         />
       </Routes>
     </ToastProvider>
