@@ -77,6 +77,7 @@ export default function Dashboard({ onLogout }) {
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
   const [viewOrder, setViewOrder] = useState(null);
+  const [deleteOrderTarget, setDeleteOrderTarget] = useState(null);
   const [editing, setEditing] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
   const toast = useToast();
@@ -112,9 +113,14 @@ export default function Dashboard({ onLogout }) {
     toast.push("Order status updated.");
   }
 
-  async function handleDeleteOrder(id) {
-    if (!confirm("Delete this order?")) return;
-    await deleteOrder({ id });
+  function handleDeleteOrder(order) {
+    setDeleteOrderTarget(order);
+  }
+
+  async function confirmDeleteOrder() {
+    if (!deleteOrderTarget) return;
+    await deleteOrder({ id: deleteOrderTarget._id });
+    setDeleteOrderTarget(null);
     toast.push("Order deleted.");
   }
 
@@ -216,9 +222,27 @@ export default function Dashboard({ onLogout }) {
             <p><strong>Pickup</strong>{viewOrder.pickupDate} at {viewOrder.pickupTime}</p>
             <p><strong>Status</strong>{viewOrder.status}</p>
             <p><strong>Total</strong>{money(viewOrder.total)}</p>
+            <p><strong>Promo</strong>{viewOrder.promo ? `${viewOrder.promo.label}${viewOrder.promo.discountAmount ? ` - ${money(viewOrder.promo.discountAmount)} discount` : ""}${viewOrder.promo.extraGram ? " - add extra 1g" : ""}` : "None"}</p>
           </div>
           <h3>Products Ordered</h3>
           {viewOrder.items?.map(item => <p key={`${item.productId}-${item.name}`}>{item.name} x {item.quantity}</p>)}
+        </Modal>
+      )}
+
+      {deleteOrderTarget && (
+        <Modal title="Delete Order" onClose={() => setDeleteOrderTarget(null)}>
+          <div className="delete-confirm">
+            <p className="delete-confirm-kicker">This cannot be undone.</p>
+            <h3>{deleteOrderTarget.orderNumber}</h3>
+            <p>
+              Delete this order for <strong>{deleteOrderTarget.customerName}</strong>?
+              It will be removed from the admin order list.
+            </p>
+            <div className="delete-confirm-actions">
+              <button className="icon-button" type="button" onClick={() => setDeleteOrderTarget(null)}>Cancel</button>
+              <button className="primary-button danger-action" type="button" onClick={confirmDeleteOrder}>Delete Order</button>
+            </div>
+          </div>
         </Modal>
       )}
 
