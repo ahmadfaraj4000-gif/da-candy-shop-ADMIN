@@ -1122,6 +1122,82 @@ td.actions .icon-button {
   }
 }
 
+/* Final admin table controls: spaced actions, selectable rows, mobile-safe toolbar. */
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .65rem;
+  flex-wrap: wrap;
+}
+
+.bulk-actions .icon-button {
+  width: auto;
+  min-width: 132px;
+  padding-inline: .9rem;
+}
+
+.select-cell {
+  width: 1%;
+  min-width: 74px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.select-cell input[type="checkbox"] {
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  min-height: 20px;
+  accent-color: var(--green);
+}
+
+.discount-action-group {
+  gap: .85rem;
+}
+
+.discount-code-actions .icon-button {
+  border-radius: 12px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+  transform: none !important;
+}
+
+@media (max-width: 820px) {
+  .panel-toolbar {
+    gap: .75rem;
+  }
+
+  .bulk-actions,
+  .bulk-actions .icon-button,
+  .search-bar {
+    width: 100%;
+  }
+
+  .bulk-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  table {
+    min-width: 900px;
+  }
+}
+
+@media (max-width: 520px) {
+  .dashboard,
+  .panel {
+    padding-inline: .75rem;
+  }
+
+  .discount-action-group {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 380px) {
   td {
     grid-template-columns: 1fr;
@@ -1130,5 +1206,478 @@ td.actions .icon-button {
 
   .admin-brand img {
     width: 88px;
+  }
+}
+
+
+/* Prize Wheel admin tab */
+.prize-wheel-panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.view-toggle,
+.prize-wheel-toggle {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  flex-wrap: wrap;
+}
+
+.prize-wheel-customer {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  align-items: start;
+  justify-items: center;
+}
+
+.promo-spinner.admin-prize-spinner {
+  width: min(100%, 760px);
+  margin-inline: auto;
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+  padding: clamp(.85rem, 3vw, 1.25rem);
+  border: 1px solid rgba(248, 223, 0, .22);
+  border-radius: 14px;
+  background: rgba(3, 4, 3, .92);
+}
+
+.promo-spinner-copy {
+  display: grid;
+  gap: .35rem;
+  text-align: center;
+}
+
+.promo-spinner-copy strong {
+  color: var(--gold);
+  font-family: var(--display-font);
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+}
+
+.promo-spinner-copy span,
+.promo-spin-message,
+.prize-result p,
+.prize-rules-card li {
+  color: var(--muted);
+}
+
+.promo-wheel-wrap {
+  position: relative;
+  width: min(100%, 560px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  margin-inline: auto;
+}
+
+.promo-wheel {
+  width: 100%;
+  height: 100%;
+  transition: none;
+  will-change: transform;
+  filter: drop-shadow(0 18px 28px rgba(0,0,0,.38));
+}
+
+.promo-wheel svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.promo-slice-0,
+.promo-slice-good { fill: #32c800; }
+.promo-slice-1,
+.promo-slice-discount { fill: #f8df00; }
+.promo-slice-2,
+.promo-slice-free { fill: #111111; }
+.promo-slice-3,
+.promo-slice-fifty { fill: #2b3529; }
+.promo-slice-4,
+.promo-slice-eighth { fill: #fff35a; }
+.promo-slice-5,
+.promo-slice-hundred { fill: #050805; }
+
+.promo-wheel-rim {
+  fill: none;
+  stroke: rgba(255,255,255,.82);
+  stroke-width: 3;
+}
+
+.promo-wheel-inner-ring {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 0;
+}
+
+.promo-wheel-center {
+  fill: #000;
+  stroke: #f8df00;
+  stroke-width: 4;
+}
+
+.promo-wheel-label {
+  fill: #fff;
+  font-size: 8px;
+  font-weight: 950;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: #000;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+}
+
+.promo-pointer {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  transform: translateX(-50%);
+  border-left: 16px solid transparent;
+  border-right: 16px solid transparent;
+  border-top: 30px solid var(--gold);
+  filter: drop-shadow(0 6px 8px rgba(0,0,0,.42));
+  z-index: 2;
+}
+
+.prize-result,
+.prize-rules-card {
+  width: min(100%, 760px);
+  margin-inline: auto;
+}
+
+.prize-result {
+  padding: 1rem;
+  border: 1px solid rgba(50, 200, 0, .42);
+  border-radius: 14px;
+  background: rgba(50, 200, 0, .08);
+}
+
+.prize-result h3 {
+  margin: .25rem 0;
+  color: var(--gold);
+}
+
+.prize-rules-card ul {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: .55rem;
+}
+
+.prize-wheel-admin {
+  display: grid;
+  gap: 1rem;
+}
+
+.prize-wheel-admin input {
+  max-width: 140px;
+}
+
+@media (max-width: 920px) {
+  .prize-wheel-panel {
+    gap: .85rem;
+  }
+
+  .prize-wheel-toggle {
+    justify-content: center;
+  }
+
+  .promo-spinner.admin-prize-spinner,
+  .prize-rules-card {
+    width: 100%;
+  }
+
+  .promo-wheel-wrap {
+    width: min(100%, 92vw);
+  }
+}
+
+@media (max-width: 520px) {
+  .promo-spinner.admin-prize-spinner {
+    padding-inline: .55rem;
+  }
+
+  .promo-wheel-label {
+    font-size: 7px;
+    stroke-width: 1.7px;
+  }
+}
+
+/* Mobile admin tab dropdown menu + cleaner discount actions */
+.mobile-tab-menu-button {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  min-height: 40px;
+  padding: .58rem .82rem;
+  border: 1px solid var(--admin-line, rgba(255,255,255,.12));
+  border-radius: 10px;
+  background: linear-gradient(180deg, #2c8f45, #17622f);
+  color: #fff;
+  font-weight: 850;
+}
+
+.logout-button {
+  flex-shrink: 0;
+}
+
+.discount-code-actions {
+  min-width: 176px;
+}
+
+.discount-action-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .7rem;
+}
+
+.discount-code-actions .icon-button {
+  width: auto !important;
+  min-width: 74px !important;
+  padding: 0 .85rem !important;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .admin-nav {
+    grid-template-columns: 1fr auto;
+  }
+
+  .mobile-tab-menu-button {
+    display: inline-flex;
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+  }
+
+  .admin-nav > .logout-button {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .tab-list {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: none;
+    grid-template-columns: 1fr;
+    width: 100%;
+    gap: .45rem;
+    padding: .45rem;
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 10px;
+    background: rgba(0,0,0,.55);
+  }
+
+  .tab-list.open,
+  .admin-nav.menu-open .tab-list {
+    display: grid;
+  }
+
+  .tab-list button {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .discount-code-actions {
+    min-width: 0;
+  }
+
+  .discount-action-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .65rem;
+    width: 100%;
+  }
+
+  .discount-code-actions .icon-button {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    padding: 0 .75rem !important;
+  }
+}
+
+/* Final mobile discount-code fix: keep actions visible without horizontal scrolling. */
+@media (max-width: 720px) {
+  .discount-code-table {
+    overflow: visible;
+  }
+
+  .discount-code-table table {
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  .discount-code-table thead {
+    display: none;
+  }
+
+  .discount-code-table tbody {
+    display: grid;
+    gap: .75rem;
+  }
+
+  .discount-code-table tr {
+    display: grid;
+    gap: .55rem;
+    width: 100%;
+    min-width: 0;
+    padding: .8rem;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px;
+    background: rgba(3, 4, 3, .92);
+  }
+
+  .discount-code-table td {
+    display: grid;
+    grid-template-columns: minmax(86px, .34fr) minmax(0, 1fr);
+    gap: .65rem;
+    width: 100%;
+    min-width: 0;
+    padding: .55rem 0;
+    border-bottom: 1px solid rgba(255,255,255,.07);
+    overflow-wrap: anywhere;
+  }
+
+  .discount-code-table td::before {
+    content: attr(data-label);
+    color: var(--admin-gold, #dfc72f);
+    font-size: .72rem;
+    font-weight: 900;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .discount-code-table td.actions {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    padding-top: .75rem;
+    border-bottom: 0;
+  }
+
+  .discount-code-table td.actions::before {
+    display: none;
+  }
+
+  .discount-code-table .discount-action-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .65rem;
+    width: 100%;
+  }
+
+  .discount-code-table .discount-action-group .icon-button {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .discount-code-table td {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Final mobile order + QR table fix. */
+@media (max-width: 720px) {
+  .responsive-admin-table {
+    overflow: visible;
+  }
+
+  .responsive-admin-table table {
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  .responsive-admin-table thead {
+    display: none;
+  }
+
+  .responsive-admin-table tbody {
+    display: grid;
+    gap: .75rem;
+  }
+
+  .responsive-admin-table tr {
+    display: grid;
+    gap: .55rem;
+    width: 100%;
+    min-width: 0;
+    padding: .8rem;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px;
+    background: rgba(3, 4, 3, .92);
+  }
+
+  .responsive-admin-table td {
+    display: grid;
+    grid-template-columns: minmax(92px, .34fr) minmax(0, 1fr);
+    gap: .65rem;
+    width: 100%;
+    min-width: 0;
+    padding: .55rem 0;
+    border-bottom: 1px solid rgba(255,255,255,.07);
+    overflow-wrap: anywhere;
+  }
+
+  .responsive-admin-table td::before {
+    content: attr(data-label);
+    color: var(--admin-gold, #dfc72f);
+    font-size: .72rem;
+    font-weight: 900;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .responsive-admin-table .select-cell {
+    text-align: left;
+  }
+
+  .responsive-admin-table td.actions {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    padding-top: .75rem;
+    border-bottom: 0;
+  }
+
+  .responsive-admin-table td.actions::before {
+    display: none;
+  }
+
+  .responsive-admin-table .action-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .65rem;
+    width: 100%;
+  }
+
+  .responsive-admin-table .action-group .icon-button {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 42px !important;
+    min-height: 42px !important;
+  }
+
+  .responsive-admin-table .payment-status {
+    justify-self: start;
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 380px) {
+  .responsive-admin-table td {
+    grid-template-columns: 1fr;
   }
 }
