@@ -1,770 +1,786 @@
+import { Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useAuthActions, useAuthToken, useConvexAuth } from "@convex-dev/auth/react";
-import { AdminNav } from "../components/AdminNav";
+import { useMutation, useQuery } from "convex/react";
+import { makeFunctionReference } from "convex/server";
+import Navbar from "../components/Navbar.jsx";
+import Footer from "../components/Footer.jsx";
+import SearchBar from "../components/SearchBar.jsx";
+import Filters from "../components/Filters.jsx";
+import OrderTable from "../components/OrderTable.jsx";
+import InventoryTable from "../components/InventoryTable.jsx";
+import Modal from "../components/Modal.jsx";
+import { useToast } from "../components/Toast.jsx";
+import { money } from "../lib/format.js";
+import { useDebounce } from "../hooks/useDebounce.js";
 
-const CONVEX_SITE_URL = (import.meta.env.VITE_CONVEX_SITE_URL || window.ANCHOR_CONVEX_SITE_URL || "").replace(/\/$/, "");
-
-const emptyEvent = {
-  category: "Fathers Day",
-  title: "",
-  dateLabel: "",
-  timeLabel: "",
-  location: "",
-  imageUrl: "",
-  imageStorageId: "",
-  description: "",
-  published: true
+const blankStrain = { name: "", strainType: "Hybrid", price: 10, onlinePrice: 10, grams: 3.5, potency: "Medium", description: "", image: "", available: true };
+const convexApi = {
+  orders: {
+    listOrders: makeFunctionReference("orders:listOrders"),
+    deleteOrder: makeFunctionReference("orders:deleteOrder"),
+    deleteOrders: makeFunctionReference("orders:deleteOrders")
+  },
+  inventory: {
+    listInventory: makeFunctionReference("inventory:listInventory"),
+    upsertStrain: makeFunctionReference("inventory:upsertStrain"),
+    deleteStrain: makeFunctionReference("inventory:deleteStrain")
+  },
+  payments: {
+    listInStorePayments: makeFunctionReference("payments:listInStorePayments"),
+    deleteInStorePayments: makeFunctionReference("payments:deleteInStorePayments")
+  },
+  discountCodes: {
+    listDiscountCodes: makeFunctionReference("discountCodes:listDiscountCodes"),
+    upsertDiscountCode: makeFunctionReference("discountCodes:upsertDiscountCode"),
+    deleteDiscountCode: makeFunctionReference("discountCodes:deleteDiscountCode")
+  }
 };
 
-const emptyPodcast = {
-  title: "",
-  platform: "YouTube",
-  embedUrl: "",
-  youtubeEmbedUrl: "",
-  spotifyEmbedUrl: "",
-  appleMusicEmbedUrl: "",
-  imageUrl: "",
-  imageStorageId: "",
-  description: "",
-  published: true
-};
+const blankDiscountCode = { code: "", type: "percent", value: 10, active: true, maxUses: undefined, expiresAt: "", note: "", minimumPurchase: undefined, maxDiscount: undefined };
 
-const emptyCause = {
-  title: "",
-  goal: "",
-  description: "",
-  paymentUrl: "",
-  published: true
-};
-
-const emptyResource = {
-  name: "",
-  organizationType: "",
-  specialty: "",
-  website: "",
-  contactName: "",
-  contactEmail: "",
-  contactPhone: "",
-  address: "",
-  description: "",
-  published: true
-};
-
-const adminTabs = [
-  ["events", "Events"],
-  ["podcasts", "Podcast Embeds"],
-  ["donations", "Donation Causes"],
-  ["resources", "Resources"],
-  ["rsvps", "RSVPs"],
-  ["gym", "Gym Partners"],
-  ["members", "Members"]
+const defaultPrizeWheelPrizes = [
+  { id: "five_percent", label: "5% Off Next Purchase", chance: 48, type: "percent", value: 5 },
+  { id: "ten_percent", label: "10% Off Next Purchase", chance: 25, type: "percent", value: 10 },
+  { id: "ten_off_fifty", label: "$10 Off a $50 Purchase", chance: 15, type: "fixed", value: 10, minimumPurchase: 50 },
+  { id: "free_rolling_papers", label: "Free Rolling Papers", chance: 8, type: "free_rolling_papers" },
+  { id: "twenty_percent", label: "20% Off Next Purchase", chance: 3, type: "percent", value: 20 },
+  { id: "fifty_percent", label: "50% Off Your Next Purchase (Up to $30 Off)", chance: 1, type: "percent", value: 50, maxDiscount: 30 }
 ];
 
-function apiUrl(path) {
-  if (!CONVEX_SITE_URL) throw new Error("Set VITE_CONVEX_SITE_URL for the admin portal.");
-  return `${CONVEX_SITE_URL}${path}`;
+const prizeWheelRules = [
+  "Spend $20 or more in a single transaction to earn 1 spin.",
+  "One spin per qualifying purchase.",
+  "Coupons expire 30 days after they are issued.",
+  "Each coupon may only be redeemed once. After it is used, it becomes invalid.",
+  "Only one coupon may be used per transaction.",
+  "50% Off is limited to a maximum discount of $30.",
+  "Coupons cannot be redeemed for cash, transferred, or combined with other promotions or discounts."
+];
+
+function makeWheelCode(prize) {
+  const safePrefix = prize.id.replace(/[^a-z0-9]/gi, "").slice(0, 8).toUpperCase();
+  const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `DCS-${safePrefix}-${randomPart}`;
 }
 
-async function apiGet(path, headers = {}) {
-  const response = await fetch(apiUrl(path), { headers });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Convex request failed: ${response.status}`);
-  return data;
+function prizeNote(prize) {
+  const details = [
+    "Prize Wheel coupon. ONE USE ONLY.",
+    "Expires 30 days after issue.",
+    "Only one coupon per transaction.",
+    "Cannot be redeemed for cash, transferred, or combined with other promotions or discounts."
+  ];
+  if (prize.minimumPurchase) details.push(`Minimum purchase: $${prize.minimumPurchase}.`);
+  if (prize.maxDiscount) details.push(`Maximum discount: $${prize.maxDiscount}.`);
+  return details.join(" ");
 }
 
-async function apiPost(path, payload, headers = {}) {
-  const response = await fetch(apiUrl(path), {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(payload)
+function discountPayloadForPrize(prize) {
+  return {
+    code: makeWheelCode(prize),
+    type: prize.type,
+    value: prize.value,
+    active: true,
+    maxUses: 1,
+    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    note: prizeNote(prize),
+    minimumPurchase: prize.minimumPurchase,
+    maxDiscount: prize.maxDiscount
+  };
+}
+
+function todayDateInput() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function choosePrize(prizes) {
+  const totalChance = prizes.reduce((sum, prize) => sum + Number(prize.chance || 0), 0);
+  let draw = Math.random() * totalChance;
+  for (const prize of prizes) {
+    draw -= Number(prize.chance || 0);
+    if (draw <= 0) return prize;
+  }
+  return prizes[0];
+}
+
+function spinSegmentIndex(prizes, prizeId) {
+  return Math.max(0, prizes.findIndex(prize => prize.id === prizeId));
+}
+
+function easeOutCubic(progress) {
+  return 1 - Math.pow(1 - progress, 3);
+}
+
+function animateWheelRotation(setRotation, from, to, duration, easing = progress => progress) {
+  return new Promise(resolve => {
+    const startedAt = performance.now();
+
+    function frame(now) {
+      const progress = Math.min(1, (now - startedAt) / duration);
+      setRotation(from + (to - from) * easing(progress));
+
+      if (progress < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        setRotation(to);
+        resolve();
+      }
+    }
+
+    requestAnimationFrame(frame);
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Convex request failed: ${response.status}`);
-  return data;
 }
 
-function dollarsToCents(value) {
-  return Math.round(Number(value || 0) * 100);
+function imageFileToDataUrl(file) {
+  if (!file || file.size === 0) return Promise.resolve("");
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Image could not be read."));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Image could not be loaded."));
+      image.onload = () => {
+        const maxSize = 600;
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/webp", 0.72);
+        if (dataUrl.length > 700000) {
+          reject(new Error("Image is too large. Try a smaller photo."));
+          return;
+        }
+        resolve(dataUrl);
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
-function centsToDollars(value) {
-  return value ? String(Math.round(value / 100)) : "";
+function imageSrc(image) {
+  if (!image) return "";
+  if (image.startsWith("assets/")) return `../${image}`;
+  return image;
 }
 
-const eventTimeOptions = Array.from({ length: 24 }, (_, hour) => {
-  const value = `${String(hour).padStart(2, "0")}:00`;
-  const displayHour = hour % 12 || 12;
-  const period = hour < 12 ? "AM" : "PM";
-  return { value, label: `${displayHour}:00 ${period}` };
-});
+function numberFromForm(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
 
-function AdminSignIn() {
-  const { signIn } = useAuthActions();
-  const [error, setError] = useState("");
+function promoDetail(order) {
+  if (!order?.promo) return "None";
+  const parts = [order.promo.label];
 
-  async function submit(event) {
-    event.preventDefault();
-    setError("");
-    const formData = new FormData(event.currentTarget);
+  if (order.promo.discountAmount) parts.push(`${money(order.promo.discountAmount)} discount`);
+  if (order.promo.extraGram) parts.push("add extra 1g");
+  if (order.promo.extraEighth) parts.push("add free 1/8th");
+  if (order.paymentMethod === "pay_at_store") parts.push("customer chose pay at store; honor after completed pickup purchase");
+  if (order.paymentMethod === "stripe" && order.paymentStatus === "paid" && order.promo.discountAmount) parts.push("discount applied online");
+  if (order.paymentMethod === "stripe" && order.paymentStatus === "paid" && (order.promo.extraGram || order.promo.extraEighth)) parts.push("paid online; give reward at pickup");
+  if (order.paymentMethod === "stripe" && order.paymentStatus !== "paid") parts.push("online checkout pending");
+
+  return parts.join(" - ");
+}
+
+export default function Dashboard({ adminToken, onLogout }) {
+  const [activeTab, setActiveTab] = useState("orders");
+  const [search, setSearch] = useState("");
+  const [type, setType] = useState("");
+  const [viewOrder, setViewOrder] = useState(null);
+  const [deleteOrderTarget, setDeleteOrderTarget] = useState(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [editingDiscount, setEditingDiscount] = useState(null);
+  const [wheelMode, setWheelMode] = useState("customer");
+  const [prizeWheelPrizes, setPrizeWheelPrizes] = useState(() => {
     try {
-      await signIn("password", formData);
-    } catch (authError) {
-      setError(authError instanceof Error ? authError.message : "Authentication failed.");
+      const saved = JSON.parse(localStorage.getItem("dcsPrizeWheelPrizes") || "null");
+      return Array.isArray(saved) && saved.length ? saved : defaultPrizeWheelPrizes;
+    } catch (_) {
+      return defaultPrizeWheelPrizes;
     }
-  }
+  });
+  const [wheelResult, setWheelResult] = useState(null);
+  const [wheelRotation, setWheelRotation] = useState(0);
+  const [wheelSpinning, setWheelSpinning] = useState(false);
+  const [imagePreview, setImagePreview] = useState("");
+  const toast = useToast();
+  const debouncedSearch = useDebounce(search);
 
-  return (
-    <form className="adminAuthForm" onSubmit={submit}>
-      <h2>Admin Sign In</h2>
-      <label>Email</label>
-      <input name="email" type="email" required />
-      <label>Password</label>
-      <input name="password" type="password" required />
-      <input name="flow" type="hidden" value="signIn" />
-      <button className="btn green">Sign In</button>
-      {error ? <p className="notice">{error}</p> : null}
-    </form>
-  );
-}
-
-export function Dashboard() {
-  const token = useAuthToken();
-  const { isAuthenticated, isLoading } = useConvexAuth();
-  const { signOut } = useAuthActions();
-  const [activeTab, setActiveTab] = useState("events");
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [events, setEvents] = useState([]);
-  const [podcasts, setPodcasts] = useState([]);
-  const [causes, setCauses] = useState([]);
-  const [resources, setResources] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [rsvps, setRsvps] = useState([]);
-  const [volunteers, setVolunteers] = useState([]);
-  const [donations, setDonations] = useState([]);
-  const [gymProfiles, setGymProfiles] = useState([]);
-  const [gymRequests, setGymRequests] = useState([]);
-  const [safetyReports, setSafetyReports] = useState([]);
-  const [userBlocks, setUserBlocks] = useState([]);
-  const [media, setMedia] = useState([]);
-  const [eventForm, setEventForm] = useState(emptyEvent);
-  const [podcastForm, setPodcastForm] = useState(emptyPodcast);
-  const [causeForm, setCauseForm] = useState(emptyCause);
-  const [resourceForm, setResourceForm] = useState(emptyResource);
-  const [status, setStatus] = useState("");
-  const [rsvpEventFilter, setRsvpEventFilter] = useState("all");
-
-  async function authHeaders() {
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }
-
-  async function loadAdminData() {
-    try {
-      const data = await apiGet("/api/admin", await authHeaders());
-      setEvents(data.events);
-      setPodcasts(data.podcasts);
-      setCauses(data.causes);
-      setResources(data.resources);
-      setUsers(data.users);
-      setRsvps(data.rsvps);
-      setVolunteers(data.volunteers);
-      setDonations(data.donations);
-      setGymProfiles(data.gymProfiles || []);
-      setGymRequests(data.gymRequests || []);
-      setSafetyReports(data.safetyReports || []);
-      setUserBlocks(data.userBlocks || []);
-      setMedia(data.media || []);
-      setStatus("");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Admin request failed.";
-      setStatus(message === "Admin access required" ? "Admin access required. Sign out and sign back in with the admin account." : message);
-    }
-  }
+  const orderArgs = { adminToken, search: debouncedSearch };
+  const inventoryArgs = type ? { search: debouncedSearch, strainType: type } : { search: debouncedSearch };
+  const orders = useQuery(convexApi.orders.listOrders, orderArgs);
+  const inventory = useQuery(convexApi.inventory.listInventory, inventoryArgs);
+  const qrPayments = useQuery(convexApi.payments.listInStorePayments, { adminToken });
+  const discountCodes = useQuery(convexApi.discountCodes.listDiscountCodes, { adminToken });
+  const deleteOrder = useMutation(convexApi.orders.deleteOrder);
+  const deleteOrders = useMutation(convexApi.orders.deleteOrders);
+  const upsertStrain = useMutation(convexApi.inventory.upsertStrain);
+  const deleteStrain = useMutation(convexApi.inventory.deleteStrain);
+  const upsertDiscountCode = useMutation(convexApi.discountCodes.upsertDiscountCode);
+  const deleteDiscountCode = useMutation(convexApi.discountCodes.deleteDiscountCode);
+  const deleteInStorePayments = useMutation(convexApi.payments.deleteInStorePayments);
 
   useEffect(() => {
-    if (isLoading || !isAuthenticated || !token) return;
-    loadAdminData();
-  }, [isLoading, isAuthenticated, token]);
+    setImagePreview(editing?.image || "");
+  }, [editing]);
 
-  const stats = useMemo(() => ([
-    ["Events", events.length],
-    ["Podcast Embeds", podcasts.length],
-    ["Donation Causes", causes.length],
-    ["Resources", resources.length],
-    ["Media", media.length],
-    ["RSVPs", rsvps.length],
-    ["Volunteers", volunteers.length],
-    ["Gym Profiles", gymProfiles.length]
-  ]), [events, podcasts, causes, resources, media, rsvps, volunteers, gymProfiles]);
+  const metrics = useMemo(() => {
+    const orderList = orders || [];
+    const paidQrPayments = (qrPayments || []).filter(payment => payment.status === "paid");
+    return {
+      pending: orderList.filter(order => order.status === "Pending").length,
+      ready: orderList.filter(order => order.status === "Ready").length,
+      revenue: orderList.reduce((sum, order) => sum + Number(order.total || 0), 0),
+      qrRevenue: paidQrPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
+    };
+  }, [orders, qrPayments]);
 
-  const eventCategories = useMemo(() => {
-    const categories = [...new Set(events.map((event) => event.category).filter(Boolean))];
-    return ["Fathers Day", ...categories.filter((category) => category !== "Fathers Day")];
-  }, [events]);
-
-  const filteredRsvps = useMemo(() => (
-    rsvpEventFilter === "all" ? rsvps : rsvps.filter((item) => item.eventId === rsvpEventFilter)
-  ), [rsvps, rsvpEventFilter]);
-
-  const filteredVolunteers = useMemo(() => (
-    rsvpEventFilter === "all" ? volunteers : volunteers.filter((item) => item.eventId === rsvpEventFilter)
-  ), [volunteers, rsvpEventFilter]);
-
-  const eventTimeChoices = useMemo(() => {
-    if (!eventForm.timeLabel || eventTimeOptions.some((time) => time.value === eventForm.timeLabel)) return eventTimeOptions;
-    return [{ value: eventForm.timeLabel, label: eventForm.timeLabel }, ...eventTimeOptions];
-  }, [eventForm.timeLabel]);
-
-  function eventTitle(eventId) {
-    return events.find((event) => event._id === eventId)?.title || eventId;
+  function handleDeleteOrder(order) {
+    setDeleteOrderTarget(order);
   }
 
-  async function saveEvent(event) {
+  async function confirmDeleteOrder() {
+    if (!deleteOrderTarget) return;
+    await deleteOrder({ adminToken, id: deleteOrderTarget._id });
+    setDeleteOrderTarget(null);
+    setSelectedOrderIds(current => current.filter(id => id !== deleteOrderTarget._id));
+    toast.push("Order deleted.");
+  }
+
+  function toggleSelectedOrder(id) {
+    setSelectedOrderIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+  }
+
+  function toggleAllOrders() {
+    const ids = (orders || []).map(order => order._id);
+    setSelectedOrderIds(current => current.length === ids.length ? [] : ids);
+  }
+
+  async function deleteSelectedOrders() {
+    if (!selectedOrderIds.length) return;
+    await deleteOrders({ adminToken, ids: selectedOrderIds });
+    setSelectedOrderIds([]);
+    toast.push("Selected orders deleted.");
+  }
+
+  function toggleSelectedPayment(id) {
+    setSelectedPaymentIds(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
+  }
+
+  function toggleAllPayments() {
+    const ids = (qrPayments || []).map(payment => payment._id);
+    setSelectedPaymentIds(current => current.length === ids.length ? [] : ids);
+  }
+
+  async function deleteSelectedPayments() {
+    if (!selectedPaymentIds.length) return;
+    await deleteInStorePayments({ adminToken, ids: selectedPaymentIds });
+    setSelectedPaymentIds([]);
+    toast.push("Selected QR payment sessions deleted.");
+  }
+
+  async function handleDeleteStrain(id) {
+    if (!confirm("Delete this strain?")) return;
+    await deleteStrain({ adminToken, id });
+    toast.push("Strain deleted.");
+  }
+
+  async function saveStrain(event) {
     event.preventDefault();
+    const formElement = event.currentTarget;
+    const formData = new FormData(formElement);
+    const form = Object.fromEntries(formData);
+    const submitButton = formElement.querySelector("button[type='submit']");
+    submitButton.disabled = true;
+    submitButton.textContent = "Saving...";
+
     try {
-      await apiPost("/api/admin/events", {
-        id: eventForm._id,
-        category: eventForm.category,
-        title: eventForm.title,
-        description: eventForm.description,
-        startsAt: eventForm.startsAt || Date.parse(`${eventForm.dateLabel} ${eventForm.timeLabel}`) || Date.now(),
-        dateLabel: eventForm.dateLabel,
-        timeLabel: eventForm.timeLabel,
-        location: eventForm.location,
-        imageUrl: eventForm.imageUrl,
-        imageStorageId: eventForm.imageStorageId,
-        published: eventForm.published
-      }, await authHeaders());
-      setEventForm(emptyEvent);
-      await loadAdminData();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Event save failed.");
-    }
-  }
+      const pickupPrice = numberFromForm(form.price);
+      const onlinePrice = numberFromForm(form.onlinePrice, pickupPrice);
+      const grams = numberFromForm(form.grams, 3.5);
+      const uploadedImage = await imageFileToDataUrl(formData.get("imageFile"));
+      const image = uploadedImage || String(form.image || "").trim() || editing?.image || "";
 
-  async function savePodcast(event) {
-    event.preventDefault();
-    try {
-      await apiPost("/api/admin/podcasts", {
-        id: podcastForm._id,
-        title: podcastForm.title,
-        platform: podcastForm.platform,
-        embedUrl: podcastForm.embedUrl,
-        youtubeEmbedUrl: podcastForm.youtubeEmbedUrl,
-        spotifyEmbedUrl: podcastForm.spotifyEmbedUrl,
-        appleMusicEmbedUrl: podcastForm.appleMusicEmbedUrl,
-        imageUrl: podcastForm.imageUrl,
-        imageStorageId: podcastForm.imageStorageId,
-        description: podcastForm.description,
-        publishedAt: podcastForm.publishedAt || Date.now(),
-        published: podcastForm.published
-      }, await authHeaders());
-      setPodcastForm(emptyPodcast);
-      await loadAdminData();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Podcast save failed.");
-    }
-  }
-
-  async function saveCause(event) {
-    event.preventDefault();
-    await apiPost("/api/admin/causes", {
-      id: causeForm._id,
-      title: causeForm.title,
-      goalCents: dollarsToCents(causeForm.goal),
-      description: causeForm.description,
-      paymentUrl: causeForm.paymentUrl,
-      published: causeForm.published
-    }, await authHeaders());
-    setCauseForm(emptyCause);
-    await loadAdminData();
-  }
-
-  async function saveResource(event) {
-    event.preventDefault();
-    await apiPost("/api/admin/resources", {
-      id: resourceForm._id,
-      name: resourceForm.name,
-      organizationType: resourceForm.organizationType,
-      specialty: resourceForm.specialty,
-      website: resourceForm.website,
-      contactName: resourceForm.contactName,
-      contactEmail: resourceForm.contactEmail,
-      contactPhone: resourceForm.contactPhone,
-      address: resourceForm.address,
-      description: resourceForm.description,
-      published: resourceForm.published
-    }, await authHeaders());
-    setResourceForm(emptyResource);
-    await loadAdminData();
-  }
-
-  async function removeItem(path, id) {
-    await apiPost(path, { id }, await authHeaders());
-    await loadAdminData();
-  }
-
-  async function uploadImage(file, applyImage) {
-    if (!file) return;
-    try {
-      setStatus("Uploading image...");
-      const { uploadUrl } = await apiPost("/api/admin/upload-url", {}, await authHeaders());
-      const uploadResponse = await fetch(uploadUrl, {
-        method: "POST",
-        headers: { "Content-Type": file.type },
-        body: file
+      await upsertStrain({
+        adminToken,
+        id: editing?._id,
+        name: form.name,
+        strainType: form.strainType,
+        description: form.description,
+        image,
+        potency: form.potency,
+        price: pickupPrice,
+        onlinePrice,
+        grams,
+        available: form.available === "on"
       });
-      if (!uploadResponse.ok) throw new Error("Image upload failed.");
-      const { storageId } = await uploadResponse.json();
-      const { url } = await apiPost("/api/admin/file-url", { storageId }, await authHeaders());
-      applyImage({ url, storageId });
-      setStatus("Image uploaded. Save the post to publish it.");
+      setEditing(null);
+      toast.push("Inventory saved.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Image upload failed.");
+      toast.push(error.message || "Inventory could not be saved.", "error");
+      submitButton.disabled = false;
+      submitButton.textContent = "Save Strain";
     }
   }
 
-  function rescheduleEvent(item) {
-    setEventForm(item);
-    requestAnimationFrame(() => document.querySelector("[data-event-date]")?.focus());
+  async function saveDiscountCode(event) {
+    event.preventDefault();
+    const form = Object.fromEntries(new FormData(event.currentTarget));
+    const type = form.type;
+    const value = type === "free_1g" || type === "free_eighth" || type === "free_rolling_papers" ? undefined : numberFromForm(form.value);
+    const maxUses = form.maxUses ? numberFromForm(form.maxUses) : undefined;
+    const expiresAt = form.expiresAt ? new Date(`${form.expiresAt}T23:59:59`).getTime() : undefined;
+    const minimumPurchase = form.minimumPurchase ? numberFromForm(form.minimumPurchase) : undefined;
+    const maxDiscount = form.maxDiscount ? numberFromForm(form.maxDiscount) : undefined;
+
+    try {
+      await upsertDiscountCode({
+        adminToken,
+        id: editingDiscount?._id,
+        code: form.code,
+        type,
+        value,
+        active: form.active === "on",
+        maxUses,
+        expiresAt,
+        note: form.note,
+        minimumPurchase,
+        maxDiscount
+      });
+      setEditingDiscount(null);
+      toast.push("Discount code saved.");
+    } catch (error) {
+      toast.push(error.message || "Discount code could not be saved.", "error");
+    }
   }
 
-  async function moderateGymProfile(profileId, adminStatus) {
-    await apiPost("/api/admin/gym-profile/moderate", { profileId, adminStatus }, await authHeaders());
-    await loadAdminData();
+  async function handleDeleteDiscountCode(id) {
+    await deleteDiscountCode({ adminToken, id });
+    toast.push("Discount code deleted.");
   }
 
-  async function updateReportStatus(reportId, status) {
-    await apiPost("/api/admin/safety-report/status", { reportId, status }, await authHeaders());
-    await loadAdminData();
+
+  function updatePrizeChance(prizeId, nextChance) {
+    setPrizeWheelPrizes(current => current.map(prize => (
+      prize.id === prizeId ? { ...prize, chance: numberFromForm(nextChance) } : prize
+    )));
   }
 
-  const statusIsError = /access|required|failed|error|login|request|set vite/i.test(status);
-
-  if (isLoading) {
-    return (
-      <section className="adminAuthGate">
-        <div className="adminAuthPanel">
-          <div>
-            <p className="eyebrow">The Anchor Collective</p>
-            <h1>Loading admin...</h1>
-            <p>Checking your admin session.</p>
-          </div>
-        </div>
-      </section>
-    );
+  function savePrizeOdds() {
+    localStorage.setItem("dcsPrizeWheelPrizes", JSON.stringify(prizeWheelPrizes));
+    toast.push("Prize wheel odds saved.");
   }
 
-  if (!isAuthenticated) {
-    return (
-      <section className="adminAuthGate">
-        <div className="adminAuthPanel">
-          <div>
-            <p className="eyebrow">The Anchor Collective</p>
-            <h1>Admin Portal</h1>
-            <p>Sign in with an approved admin account to manage content, members, gym partner safety, RSVPs, and resources.</p>
-          </div>
-          <AdminSignIn />
-        </div>
-      </section>
-    );
+  function resetPrizeOdds() {
+    setPrizeWheelPrizes(defaultPrizeWheelPrizes);
+    localStorage.removeItem("dcsPrizeWheelPrizes");
+    toast.push("Prize wheel odds reset.");
+  }
+
+  async function spinPrizeWheel() {
+    if (wheelSpinning) return;
+    const totalChance = prizeWheelPrizes.reduce((sum, prize) => sum + Number(prize.chance || 0), 0);
+    if (totalChance <= 0) {
+      toast.push("Prize wheel odds must add up above 0%.", "error");
+      return;
+    }
+
+    const prize = choosePrize(prizeWheelPrizes);
+    const payload = discountPayloadForPrize(prize);
+    const landingRotations = [330, 270, 210, 150, 90, 30];
+    const landingRotation = landingRotations[spinSegmentIndex(prizeWheelPrizes, prize.id)] ?? 330;
+    const startRotation = wheelRotation;
+    const desiredFastEnd = (landingRotation - 120 + 360) % 360;
+    const naturalFastEnd = (startRotation + 2160) % 360;
+    const fastAdjustment = (desiredFastEnd - naturalFastEnd + 360) % 360;
+    const fastRotation = startRotation + 2160 + fastAdjustment;
+    const finalRotation = fastRotation + 480;
+
+    setWheelSpinning(true);
+    setWheelResult(null);
+
+    try {
+      await animateWheelRotation(setWheelRotation, startRotation, fastRotation, 3000);
+      await animateWheelRotation(setWheelRotation, fastRotation, finalRotation, 2000, easeOutCubic);
+      await upsertDiscountCode({ adminToken, ...payload });
+      setWheelResult({ prize, code: payload.code, expiresAt: payload.expiresAt });
+      toast.push("Prize wheel code created under Discount Codes.");
+    } catch (error) {
+      toast.push(error.message || "Prize wheel code could not be created.", "error");
+    } finally {
+      setWheelSpinning(false);
+    }
+  }
+
+  async function handleImageFileChange(event) {
+    try {
+      const preview = await imageFileToDataUrl(event.target.files?.[0]);
+      if (preview) setImagePreview(preview);
+    } catch (error) {
+      toast.push(error.message || "Image could not be previewed.", "error");
+      event.target.value = "";
+    }
+  }
+
+  function handleTabChange(tab) {
+    setActiveTab(tab);
+    setSearch("");
+    setType("");
   }
 
   return (
     <>
-      <AdminNav />
-      <section className="dash">
-        <div className="adminWrap">
-          <div className="adminHeader withAction">
-            <div>
-              <h1>Admin Portal</h1>
-              <p className="lead">Create and manage site content, review RSVPs, and keep the public pages current.</p>
-            </div>
-            <button className="btn" type="button" onClick={() => void signOut()}>Sign Out</button>
+      <Navbar activeTab={activeTab} onTabChange={handleTabChange} onLogout={onLogout} />
+      <main className="dashboard">
+        <section className="metric-grid">
+          <article><span>Pending</span><strong>{metrics.pending}</strong></article>
+          <article><span>Ready</span><strong>{metrics.ready}</strong></article>
+          <article><span>{activeTab === "payments" ? "Paid QR Total" : "Current Total"}</span><strong>{money(activeTab === "payments" ? metrics.qrRevenue : metrics.revenue)}</strong></article>
+        </section>
+        <section className="panel">
+          <div className="panel-toolbar">
+            <SearchBar value={search} onChange={setSearch} placeholder={activeTab === "orders" ? "Search orders" : activeTab === "payments" ? "Search QR payments" : activeTab === "discounts" ? "Search discount codes" : activeTab === "prizeWheel" ? "Prize wheel" : "Search strains"} />
+            {activeTab === "orders" && (
+              <BulkActions
+                total={(orders || []).length}
+                selected={selectedOrderIds.length}
+                onSelectAll={toggleAllOrders}
+                onDeleteSelected={deleteSelectedOrders}
+              />
+            )}
+            {activeTab === "payments" && (
+              <BulkActions
+                total={(qrPayments || []).length}
+                selected={selectedPaymentIds.length}
+                onSelectAll={toggleAllPayments}
+                onDeleteSelected={deleteSelectedPayments}
+              />
+            )}
+            {activeTab === "inventory" && <Filters type={type} onTypeChange={setType} />}
+            {activeTab === "inventory" && <button className="primary-button" onClick={() => setEditing(blankStrain)}><Plus size={18} /> Add Strain</button>}
+            {activeTab === "discounts" && <button className="primary-button" onClick={() => setEditingDiscount(blankDiscountCode)}><Plus size={18} /> Add Code</button>}
           </div>
-          {status ? <p className={`adminNotice ${statusIsError ? "error" : "success"}`}>{status}</p> : null}
-          <div className="adminStats">
-            {stats.map(([label, value]) => <div className="adminStat" key={label}><span>{label}</span><b>{value}</b></div>)}
+          {activeTab === "orders" && (
+            <OrderTable orders={orders} selectedIds={selectedOrderIds} onToggle={toggleSelectedOrder} onView={setViewOrder} onDelete={handleDeleteOrder} />
+          )}
+          {activeTab === "payments" && (
+            <QrPaymentTable payments={qrPayments} search={debouncedSearch} selectedIds={selectedPaymentIds} onToggle={toggleSelectedPayment} />
+          )}
+          {activeTab === "inventory" && (
+            <InventoryTable inventory={inventory} onEdit={setEditing} onDelete={handleDeleteStrain} />
+          )}
+          {activeTab === "discounts" && (
+            <DiscountCodeTable codes={discountCodes} onEdit={setEditingDiscount} onDelete={handleDeleteDiscountCode} />
+          )}
+          {activeTab === "prizeWheel" && (
+            <PrizeWheelPanel
+              prizes={prizeWheelPrizes}
+              rules={prizeWheelRules}
+              mode={wheelMode}
+              onModeChange={setWheelMode}
+              onChanceChange={updatePrizeChance}
+              onResetOdds={resetPrizeOdds}
+              onSaveOdds={savePrizeOdds}
+              onSpin={spinPrizeWheel}
+              spinning={wheelSpinning}
+              rotation={wheelRotation}
+              result={wheelResult}
+            />
+          )}
+          {!["orders", "payments", "inventory", "discounts", "prizeWheel"].includes(activeTab) && (
+            <div className="state-card">Choose an admin section.</div>
+          )}
+        </section>
+      </main>
+      <Footer />
+
+      {viewOrder && (
+        <Modal title={`Order ${viewOrder.orderNumber}`} onClose={() => setViewOrder(null)}>
+          <div className="detail-list">
+            <p><strong>Customer</strong>{viewOrder.customerName}</p>
+            <p><strong>Phone</strong>{viewOrder.phone}</p>
+            <p><strong>Pickup</strong>{viewOrder.pickupDate} at {viewOrder.pickupTime}</p>
+            <p><strong>Total</strong>{money(viewOrder.total)}</p>
+            <p><strong>Promo</strong>{promoDetail(viewOrder)}</p>
           </div>
+          <h3>Products Ordered</h3>
+          {viewOrder.items?.map(item => <p key={`${item.productId}-${item.name}`}>{item.name} x {item.quantity}</p>)}
+        </Modal>
+      )}
 
-          <div className="adminLayout">
-            <aside className="adminSidebar">
-              <button className="mobileSectionToggle" type="button" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)}>
-                <span>Menu</span>
-                <b>{adminTabs.find(([tab]) => tab === activeTab)?.[1] || "Sections"}</b>
-              </button>
-              <div className="sectionTabList">
-                {adminTabs.map(([tab, label]) => (
-                  <button className={`tab ${activeTab === tab ? "active" : ""}`} key={tab} onClick={() => {
-                    setActiveTab(tab);
-                    setMobileMenuOpen(false);
-                  }}>{label}</button>
-                ))}
-              </div>
-            </aside>
-
-            <div className="adminPanel">
-              {activeTab === "events" && (
-            <div className="adminStack">
-              <form className="form adminEditor eventEditor" onSubmit={saveEvent}>
-                <div className="editorHead">
-                  <h2>{eventForm._id ? "Edit Event" : "Add Event"}</h2>
-                  <label className="checkLabel"><input type="checkbox" checked={eventForm.published} onChange={(event) => setEventForm({ ...eventForm, published: event.target.checked })} /> Published</label>
-                </div>
-                <div className="editorGrid eventEditorGrid">
-                  <div>
-                    <label>Event Name</label>
-                    <input required value={eventForm.title} onChange={(event) => setEventForm({ ...eventForm, title: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Category</label>
-                    <input list="eventCategories" required value={eventForm.category} onChange={(event) => setEventForm({ ...eventForm, category: event.target.value })} />
-                    <datalist id="eventCategories">
-                      {eventCategories.map((category) => <option value={category} key={category} />)}
-                    </datalist>
-                  </div>
-                  <div>
-                    <label>Date</label>
-                    <input data-event-date type="date" required value={eventForm.dateLabel || ""} onChange={(event) => setEventForm({ ...eventForm, dateLabel: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Time</label>
-                    <select required value={eventForm.timeLabel || ""} onChange={(event) => setEventForm({ ...eventForm, timeLabel: event.target.value })}>
-                      <option value="">Pick a time</option>
-                      {eventTimeChoices.map((time) => <option value={time.value} key={time.value}>{time.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label>Location</label>
-                    <input required value={eventForm.location} onChange={(event) => setEventForm({ ...eventForm, location: event.target.value })} />
-                  </div>
-                  <div className="editorWide">
-                    <label>Info</label>
-                    <textarea rows="2" required value={eventForm.description} onChange={(event) => setEventForm({ ...eventForm, description: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Event Image</label>
-                    <label className="uploadButton">Upload Image<input type="file" accept="image/*" onChange={(event) => uploadImage(event.target.files?.[0], ({ url, storageId }) => setEventForm((current) => ({ ...current, imageUrl: url, imageStorageId: storageId })))} /></label>
-                    {eventForm.imageUrl ? <img className="editorImagePreview" src={eventForm.imageUrl} alt="Event upload preview" /> : null}
-                  </div>
-                  <div className="editorActions">
-                    <button className="btn green">Save Event</button>
-                    {eventForm._id ? <button className="btn" type="button" onClick={() => setEventForm(emptyEvent)}>Cancel</button> : null}
-                  </div>
-                </div>
-              </form>
-              <div className="eventList">
-                {events.map((item) => {
-                  const eventRsvps = rsvps.filter((rsvp) => rsvp.eventId === item._id);
-                  const eventVolunteers = volunteers.filter((volunteer) => volunteer.eventId === item._id);
-                  return (
-                    <div className="listItem eventListItem" key={item._id}>
-                      <div>
-                        {item.imageUrl ? <img className="adminListThumb" src={item.imageUrl} alt={item.title} /> : null}
-                        <h3>{item.title}</h3>
-                        <p>{item.category} | {item.dateLabel || new Date(item.startsAt).toLocaleDateString()} at {item.timeLabel || ""}</p>
-                        <p>{eventRsvps.length} RSVP{eventRsvps.length === 1 ? "" : "s"} | {eventVolunteers.length} volunteer{eventVolunteers.length === 1 ? "" : "s"}</p>
-                        <p>{item.description}</p>
-                        <div className="adminEventPeople">
-                          <div><b>RSVPs</b>{eventRsvps.length ? eventRsvps.map((person) => <span key={person._id}>{person.name} | {person.email}</span>) : <span>No RSVPs yet.</span>}</div>
-                          <div><b>Volunteers</b>{eventVolunteers.length ? eventVolunteers.map((person) => <span key={person._id}>{person.name} | {person.email}{person.role ? ` | ${person.role}` : ""}</span>) : <span>No volunteers yet.</span>}</div>
-                        </div>
-                      </div>
-                      <div className="miniActions"><button className="btn" onClick={() => setEventForm(item)}>Edit</button><button className="btn" onClick={() => rescheduleEvent(item)}>Reschedule</button><button className="btn danger" onClick={() => removeItem("/api/admin/events/delete", item._id)}>Delete</button></div>
-                    </div>
-                  );
-                })}
-                {!events.length ? <div className="listItem"><p>No events yet. Add one above.</p></div> : null}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "podcasts" && (
-            <div className="adminStack">
-              <form className="form adminEditor compactEditor" onSubmit={savePodcast}>
-                <div className="editorHead">
-                  <h2>{podcastForm._id ? "Edit Podcast" : "Add Podcast"}</h2>
-                  <label className="checkLabel"><input type="checkbox" checked={podcastForm.published} onChange={(event) => setPodcastForm({ ...podcastForm, published: event.target.checked })} /> Published</label>
-                </div>
-                <div className="editorGrid podcastEditorGrid">
-                  <div>
-                    <label>Title</label>
-                    <input required value={podcastForm.title} onChange={(event) => setPodcastForm({ ...podcastForm, title: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Platform</label>
-                    <select value={podcastForm.platform} onChange={(event) => setPodcastForm({ ...podcastForm, platform: event.target.value })}><option>YouTube</option><option>Spotify</option><option>Apple Music</option></select>
-                  </div>
-                  <div>
-                    <label>YouTube Embed</label>
-                    <input value={podcastForm.youtubeEmbedUrl || ""} onChange={(event) => setPodcastForm({ ...podcastForm, youtubeEmbedUrl: event.target.value, embedUrl: event.target.value || podcastForm.embedUrl })} />
-                  </div>
-                  <div>
-                    <label>Spotify Embed</label>
-                    <input value={podcastForm.spotifyEmbedUrl || ""} onChange={(event) => setPodcastForm({ ...podcastForm, spotifyEmbedUrl: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Apple Music Embed</label>
-                    <input value={podcastForm.appleMusicEmbedUrl || ""} onChange={(event) => setPodcastForm({ ...podcastForm, appleMusicEmbedUrl: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Image URL</label>
-                    <input value={podcastForm.imageUrl || ""} placeholder="assets/logos/logo.png" onChange={(event) => setPodcastForm({ ...podcastForm, imageUrl: event.target.value, imageStorageId: "" })} />
-                  </div>
-                  <div>
-                    <label>Podcast Image</label>
-                    <label className="uploadButton">Upload Image<input type="file" accept="image/*" onChange={(event) => uploadImage(event.target.files?.[0], ({ url, storageId }) => setPodcastForm((current) => ({ ...current, imageUrl: url, imageStorageId: storageId })))} /></label>
-                    {podcastForm.imageUrl ? <img className="editorImagePreview" src={podcastForm.imageUrl} alt="Podcast upload preview" /> : null}
-                  </div>
-                  <div className="editorWide">
-                    <label>Description</label>
-                    <textarea rows="2" required value={podcastForm.description} onChange={(event) => setPodcastForm({ ...podcastForm, description: event.target.value })} />
-                  </div>
-                  <div className="editorActions">
-                    <button className="btn green">Save Podcast</button>
-                    {podcastForm._id ? <button className="btn" type="button" onClick={() => setPodcastForm(emptyPodcast)}>Cancel</button> : null}
-                  </div>
-                </div>
-              </form>
-              <div className="eventList">
-                {podcasts.map((item) => <div className="listItem eventListItem" key={item._id}><div>{item.imageUrl ? <img className="adminListThumb" src={item.imageUrl} alt={item.title} /> : null}<h3>{item.title}</h3><p>{[item.youtubeEmbedUrl && "YouTube", item.spotifyEmbedUrl && "Spotify", item.appleMusicEmbedUrl && "Apple Music"].filter(Boolean).join(" + ") || item.platform}</p><p>{item.description}</p></div><div className="miniActions"><button className="btn" onClick={() => setPodcastForm({ ...emptyPodcast, ...item })}>Edit</button><button className="btn danger" onClick={() => removeItem("/api/admin/podcasts/delete", item._id)}>Delete</button></div></div>)}
-                {!podcasts.length ? <div className="listItem"><p>No podcast embeds yet. Add one above.</p></div> : null}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "donations" && (
-            <div className="adminStack">
-              <form className="form adminEditor compactEditor" onSubmit={saveCause}>
-                <div className="editorHead">
-                  <h2>{causeForm._id ? "Edit Cause" : "Add Donation Cause"}</h2>
-                  <label className="checkLabel"><input type="checkbox" checked={causeForm.published} onChange={(event) => setCauseForm({ ...causeForm, published: event.target.checked })} /> Published</label>
-                </div>
-                <div className="editorGrid causeEditorGrid">
-                  <div>
-                    <label>Cause Name</label>
-                    <input required value={causeForm.title} onChange={(event) => setCauseForm({ ...causeForm, title: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Goal Amount</label>
-                    <input required value={causeForm.goal} onChange={(event) => setCauseForm({ ...causeForm, goal: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Payment Link</label>
-                    <input value={causeForm.paymentUrl || ""} placeholder="Add nonprofit payment link" onChange={(event) => setCauseForm({ ...causeForm, paymentUrl: event.target.value })} />
-                  </div>
-                  <div className="editorWide">
-                    <label>Description</label>
-                    <textarea rows="2" required value={causeForm.description} onChange={(event) => setCauseForm({ ...causeForm, description: event.target.value })} />
-                  </div>
-                  <div className="editorActions">
-                    <button className="btn green">Save Cause</button>
-                    {causeForm._id ? <button className="btn" type="button" onClick={() => setCauseForm(emptyCause)}>Cancel</button> : null}
-                  </div>
-                </div>
-              </form>
-              <div className="eventList">
-                {causes.map((item) => <div className="listItem eventListItem" key={item._id}><div><h3>{item.title}</h3><p>Goal: ${Math.round(item.goalCents / 100).toLocaleString()}</p><p>{item.description}</p></div><div className="miniActions"><button className="btn" onClick={() => setCauseForm({ ...item, goal: centsToDollars(item.goalCents) })}>Edit</button><button className="btn danger" onClick={() => removeItem("/api/admin/causes/delete", item._id)}>Delete</button></div></div>)}
-                {!causes.length ? <div className="listItem"><p>No donation causes yet. Add one above.</p></div> : null}
-                <div className="listItem"><h3>Donation Activity</h3>{donations.length ? donations.map((item) => <p key={item._id}>{item.donorEmail} pledged ${(item.amountCents / 100).toFixed(2)}</p>) : <p>No donation activity yet.</p>}</div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "rsvps" && (
-            <div className="tableList">
-              <div className="listItem">
-                <h3>Event People</h3>
-                <label>Filter By Event</label>
-                <select value={rsvpEventFilter} onChange={(event) => setRsvpEventFilter(event.target.value)}>
-                  <option value="all">All Events</option>
-                  {events.map((event) => <option value={event._id} key={event._id}>{event.title}</option>)}
-                </select>
-              </div>
-              {filteredRsvps.length ? filteredRsvps.map((item) => (
-                <div className="listItem" key={item._id}>
-                  <h3>{item.name}</h3>
-                  <p>{item.email}</p>
-                  <p>RSVP'd for {eventTitle(item.eventId)}</p>
-                </div>
-              )) : <div className="listItem"><p>No RSVPs match this filter.</p></div>}
-              <div className="listItem"><h3>Volunteers</h3></div>
-              {filteredVolunteers.length ? filteredVolunteers.map((item) => (
-                <div className="listItem" key={item._id}>
-                  <h3>{item.name}</h3>
-                  <p>{item.email}{item.phone ? ` | ${item.phone}` : ""}</p>
-                  <p>Volunteered for {eventTitle(item.eventId)}</p>
-                  {item.role ? <p>Role: {item.role}</p> : null}
-                  {item.availability ? <p>Availability: {item.availability}</p> : null}
-                </div>
-              )) : <div className="listItem"><p>No volunteers match this filter.</p></div>}
-            </div>
-          )}
-
-          {activeTab === "resources" && (
-            <div className="adminStack">
-              <form className="form adminEditor compactEditor" onSubmit={saveResource}>
-                <div className="editorHead">
-                  <h2>{resourceForm._id ? "Edit Resource" : "Add Resource"}</h2>
-                  <label className="checkLabel"><input type="checkbox" checked={resourceForm.published} onChange={(event) => setResourceForm({ ...resourceForm, published: event.target.checked })} /> Published</label>
-                </div>
-                <div className="editorGrid resourceEditorGrid">
-                  <div>
-                    <label>Practice / Organization</label>
-                    <input required value={resourceForm.name} onChange={(event) => setResourceForm({ ...resourceForm, name: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Type</label>
-                    <input required placeholder="Family therapy, legal aid..." value={resourceForm.organizationType} onChange={(event) => setResourceForm({ ...resourceForm, organizationType: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Specialty</label>
-                    <input required placeholder="Co-parenting, youth support..." value={resourceForm.specialty} onChange={(event) => setResourceForm({ ...resourceForm, specialty: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Website</label>
-                    <input type="url" value={resourceForm.website || ""} onChange={(event) => setResourceForm({ ...resourceForm, website: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Contact Name</label>
-                    <input value={resourceForm.contactName || ""} onChange={(event) => setResourceForm({ ...resourceForm, contactName: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Contact Email</label>
-                    <input type="email" value={resourceForm.contactEmail || ""} onChange={(event) => setResourceForm({ ...resourceForm, contactEmail: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Contact Phone</label>
-                    <input value={resourceForm.contactPhone || ""} onChange={(event) => setResourceForm({ ...resourceForm, contactPhone: event.target.value })} />
-                  </div>
-                  <div>
-                    <label>Address</label>
-                    <input value={resourceForm.address || ""} onChange={(event) => setResourceForm({ ...resourceForm, address: event.target.value })} />
-                  </div>
-                  <div className="editorWide">
-                    <label>Description</label>
-                    <textarea rows="2" required value={resourceForm.description} onChange={(event) => setResourceForm({ ...resourceForm, description: event.target.value })} />
-                  </div>
-                  <div className="editorActions">
-                    <button className="btn green">Save Resource</button>
-                    {resourceForm._id ? <button className="btn" type="button" onClick={() => setResourceForm(emptyResource)}>Cancel</button> : null}
-                  </div>
-                </div>
-              </form>
-              <div className="eventList">
-                {resources.map((item) => <div className="listItem eventListItem" key={item._id}><div><h3>{item.name}</h3><p>{item.organizationType} | {item.specialty}</p><p>{item.contactPhone || item.contactEmail || item.website || "No contact listed"}</p><p>{item.description}</p></div><div className="miniActions"><button className="btn" onClick={() => setResourceForm({ ...emptyResource, ...item })}>Edit</button><button className="btn danger" onClick={() => removeItem("/api/admin/resources/delete", item._id)}>Delete</button></div></div>)}
-                {!resources.length ? <div className="listItem"><p>No resources yet. Add one above.</p></div> : null}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "gym" && (
-            <div className="adminStack">
-              <div className="tableList">
-                <div className="listItem">
-                  <h3>Gym Partner Profiles</h3>
-                  <p>{gymProfiles.filter((profile) => profile.active).length} active profile{gymProfiles.filter((profile) => profile.active).length === 1 ? "" : "s"}.</p>
-                </div>
-                {gymProfiles.length ? gymProfiles.map((profile) => (
-                  <div className="listItem memberItem" key={profile._id}>
-                    <h3>{profile.name}</h3>
-                    <p>{profile.email} | {profile.neighborhood || "Neighborhood not listed"}</p>
-                    <p>{profile.active ? "Active" : "Paused"} | {profile.preferredGym || "Gym not listed"} | {profile.fitnessLevel}</p>
-                    <p>Moderation: {profile.adminStatus || "approved"}</p>
-                    <p>Days: {profile.days.join(", ") || "Not listed"}</p>
-                    <p>Times: {profile.times.join(", ") || "Not listed"}</p>
-                    <p>Goals: {profile.goals.join(", ") || "Not listed"}</p>
-                    {profile.partnerPreference ? <p>Preference: {profile.partnerPreference}</p> : null}
-                    {profile.transportation ? <p>Transportation: {profile.transportation}</p> : null}
-                    {profile.notes ? <p>{profile.notes}</p> : null}
-                    <div className="miniActions">
-                      <button className="btn green" onClick={() => moderateGymProfile(profile._id, "approved")}>Approve</button>
-                      <button className="btn" onClick={() => moderateGymProfile(profile._id, "pending")}>Pause</button>
-                      <button className="btn danger" onClick={() => moderateGymProfile(profile._id, "blocked")}>Block</button>
-                      <button className="btn danger" onClick={() => moderateGymProfile(profile._id, "removed")}>Remove</button>
-                    </div>
-                  </div>
-                )) : <div className="listItem"><p>No gym partner profiles yet.</p></div>}
-              </div>
-              <div className="tableList">
-                <div className="listItem"><h3>Gym Partner Requests</h3></div>
-                {gymRequests.length ? gymRequests.map((request) => (
-                  <div className="listItem memberItem" key={request._id}>
-                    <h3>{request.requesterName} to {request.recipientName}</h3>
-                    <p>{request.requesterEmail} to {request.recipientEmail}</p>
-                    <p>Status: {request.status}</p>
-                    {request.message ? <p>{request.message}</p> : null}
-                  </div>
-                )) : <div className="listItem"><p>No gym partner requests yet.</p></div>}
-              </div>
-              <div className="tableList">
-                <div className="listItem"><h3>Safety Reports</h3></div>
-                {safetyReports.length ? safetyReports.map((report) => (
-                  <div className="listItem memberItem" key={report._id}>
-                    <h3>{report.reason}</h3>
-                    <p>Reporter: {report.reporterEmail}</p>
-                    {report.reportedEmail ? <p>Reported: {report.reportedEmail}</p> : null}
-                    <p>Status: {report.status}</p>
-                    {report.details ? <p>{report.details}</p> : null}
-                    <div className="miniActions">
-                      <button className="btn" onClick={() => updateReportStatus(report._id, "reviewing")}>Reviewing</button>
-                      <button className="btn green" onClick={() => updateReportStatus(report._id, "resolved")}>Resolved</button>
-                      <button className="btn" onClick={() => updateReportStatus(report._id, "dismissed")}>Dismiss</button>
-                    </div>
-                  </div>
-                )) : <div className="listItem"><p>No safety reports yet.</p></div>}
-              </div>
-              <div className="tableList">
-                <div className="listItem"><h3>User Blocks</h3></div>
-                {userBlocks.length ? userBlocks.map((block) => (
-                  <div className="listItem" key={block._id}>
-                    <h3>{block.blockerEmail} blocked {block.blockedEmail}</h3>
-                    {block.reason ? <p>{block.reason}</p> : null}
-                  </div>
-                )) : <div className="listItem"><p>No user blocks yet.</p></div>}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "members" && (
-            <div className="tableList">
-              {users.length ? users.map((user) => (
-                <div className="listItem memberItem" key={user._id}>
-                  <h3>{user.name}</h3>
-                  <p>{user.email}{user.phone ? ` | ${user.phone}` : ""}</p>
-                  <p>{user.dateOfBirth ? `DOB: ${user.dateOfBirth}` : "DOB not provided"} | {user.neighborhood || "Neighborhood not provided"}</p>
-                  <p>{user.familyRole || "Family role not provided"} | {user.interests?.join(", ")}</p>
-                  {user.preferredContact ? <p>Preferred contact: {user.preferredContact}</p> : null}
-                  {user.supportNeeds ? <p>{user.supportNeeds}</p> : null}
-                </div>
-              )) : <div className="listItem"><p>No members yet.</p></div>}
-            </div>
-          )}
+      {deleteOrderTarget && (
+        <Modal title="Delete Order" onClose={() => setDeleteOrderTarget(null)}>
+          <div className="delete-confirm">
+            <p className="delete-confirm-kicker">This cannot be undone.</p>
+            <h3>{deleteOrderTarget.orderNumber}</h3>
+            <p>
+              Delete this order for <strong>{deleteOrderTarget.customerName}</strong>?
+              It will be removed from the admin order list.
+            </p>
+            <div className="delete-confirm-actions">
+              <button className="icon-button" type="button" onClick={() => setDeleteOrderTarget(null)}>Cancel</button>
+              <button className="primary-button danger-action" type="button" onClick={confirmDeleteOrder}>Delete Order</button>
             </div>
           </div>
-        </div>
-      </section>
-      {mobileMenuOpen ? (
-        <div className="adminSheetOverlay" role="presentation" onClick={() => setMobileMenuOpen(false)}>
-          <div className="adminBottomSheet" role="dialog" aria-modal="true" aria-label="Admin sections" onClick={(event) => event.stopPropagation()}>
-            <div className="adminSheetHandle" />
-            <div className="adminSheetHead">
-              <div>
-                <span>Admin Menu</span>
-                <b>{adminTabs.find(([tab]) => tab === activeTab)?.[1] || "Sections"}</b>
+        </Modal>
+      )}
+
+      {editing && (
+        <Modal title={editing._id ? "Edit Strain" : "Add Strain"} onClose={() => setEditing(null)}>
+          <form className="strain-form" onSubmit={saveStrain}>
+            <label>Name <input name="name" defaultValue={editing.name} required /></label>
+            <label>Type <select name="strainType" defaultValue={editing.strainType}><option>Indica</option><option>Sativa</option><option>Hybrid</option></select></label>
+            <label>Pickup Price <input name="price" type="number" step="0.01" min="0.01" defaultValue={editing.price} required /></label>
+            <label>Online Price <input name="onlinePrice" type="number" step="0.01" min="0.01" defaultValue={editing.onlinePrice ?? editing.price} required /></label>
+            <label>Grams <input name="grams" type="number" step="0.1" min="0.1" defaultValue={editing.grams ?? 3.5} required /></label>
+            <label>Potency <select name="potency" defaultValue={editing.potency}><option>Low</option><option>Medium</option><option>High</option></select></label>
+            <label>Image URL <input name="image" defaultValue={editing.image?.startsWith("data:") ? "" : editing.image} placeholder="Paste image URL or upload below" /></label>
+            <label>Upload Image <input name="imageFile" type="file" accept="image/*" onChange={handleImageFileChange} /></label>
+            {imagePreview && (
+              <div className="image-preview wide">
+                <img src={imageSrc(imagePreview)} alt={`${editing.name || "Strain"} preview`} />
               </div>
-              <button className="btn" type="button" onClick={() => setMobileMenuOpen(false)}>Close</button>
-            </div>
-            <div className="adminSheetTabs">
-              {adminTabs.map(([tab, label]) => (
-                <button className={`tab ${activeTab === tab ? "active" : ""}`} key={tab} onClick={() => {
-                  setActiveTab(tab);
-                  setMobileMenuOpen(false);
-                }}>{label}</button>
-              ))}
-            </div>
-          </div>
-        </div>
-      ) : null}
+            )}
+            <label className="checkbox-row"><input name="available" type="checkbox" defaultChecked={editing.available ?? Number(editing.quantity ?? 0) > 0} /> Available</label>
+            <label className="wide">Description <textarea name="description" rows="4" defaultValue={editing.description} required /></label>
+            <button className="primary-button wide" type="submit">Save Strain</button>
+          </form>
+        </Modal>
+      )}
+
+      {editingDiscount && (
+        <Modal title={editingDiscount._id ? "Edit Discount Code" : "Add Discount Code"} onClose={() => setEditingDiscount(null)}>
+          <form className="strain-form" onSubmit={saveDiscountCode}>
+            <label>Code <input name="code" defaultValue={editingDiscount.code} required /></label>
+            <label>Type
+              <select name="type" defaultValue={editingDiscount.type}>
+                <option value="percent">Percent Off</option>
+                <option value="fixed">Dollar Amount Off</option>
+                <option value="free_1g">Free 1g</option>
+                <option value="free_eighth">Free 1/8th</option>
+                <option value="free_rolling_papers">Free Rolling Papers</option>
+              </select>
+            </label>
+            <label>Value <input name="value" type="number" step="0.01" min="0" defaultValue={editingDiscount.value ?? ""} /></label>
+            <label>Minimum Purchase <input name="minimumPurchase" type="number" step="0.01" min="0" defaultValue={editingDiscount.minimumPurchase ?? ""} /></label>
+            <label>Max Discount <input name="maxDiscount" type="number" step="0.01" min="0" defaultValue={editingDiscount.maxDiscount ?? ""} /></label>
+            <label>Max Uses <input name="maxUses" type="number" min="1" defaultValue={editingDiscount.maxUses ?? ""} /></label>
+            <label>Expires <input name="expiresAt" type="date" min={todayDateInput()} defaultValue={editingDiscount.expiresAt ? new Date(editingDiscount.expiresAt).toISOString().slice(0, 10) : todayDateInput()} /></label>
+            <label className="checkbox-row"><input name="active" type="checkbox" defaultChecked={editingDiscount.active ?? true} /> Active</label>
+            <label className="wide">Note <textarea name="note" rows="3" defaultValue={editingDiscount.note || ""} /></label>
+            <button className="primary-button wide" type="submit">Save Code</button>
+          </form>
+        </Modal>
+      )}
     </>
+  );
+}
+
+function BulkActions({ total, selected, onSelectAll, onDeleteSelected }) {
+  return (
+    <div className="bulk-actions">
+      <button className="icon-button" type="button" onClick={onSelectAll} disabled={!total}>
+        {selected && selected === total ? "Clear Selection" : "Select All"}
+      </button>
+      <button className="icon-button danger" type="button" onClick={onDeleteSelected} disabled={!selected}>
+        Delete Selected{selected ? ` (${selected})` : ""}
+      </button>
+    </div>
+  );
+}
+
+
+function PrizeWheelPanel({ prizes, rules, mode, onModeChange, onChanceChange, onResetOdds, onSaveOdds, onSpin, spinning, rotation, result }) {
+  const totalChance = prizes.reduce((sum, prize) => sum + Number(prize.chance || 0), 0);
+
+  return (
+    <div className="prize-wheel-panel">
+      <div className="view-toggle prize-wheel-toggle">
+        <button className={mode === "customer" ? "primary-button" : "icon-button"} type="button" onClick={() => onModeChange("customer")}>Customer View</button>
+        <button className={mode === "admin" ? "primary-button" : "icon-button"} type="button" onClick={() => onModeChange("admin")}>Admin View</button>
+      </div>
+
+      {mode === "customer" ? (
+        <div className="prize-wheel-customer">
+          <div className="promo-spinner admin-prize-spinner" aria-live="polite">
+            <div className="promo-spinner-copy">
+              <strong>🎡 Prize Wheel</strong>
+              <span>Spend $20 or more in a single transaction to earn 1 spin. Whatever the customer wins gets a one-use discount code.</span>
+            </div>
+            <div className="promo-wheel-wrap">
+              <div className="promo-wheel" style={{ transform: `rotate(${rotation}deg)` }}>
+                <svg viewBox="0 0 200 200" role="img" aria-label="Prize wheel with 5% Off, 10% Off, $10 Off $50, Free Rolling Papers, 20% Off, and 50% Off sections">
+                  <path className="promo-slice promo-slice-good" d="M100 100 L100.00 8.00 A92 92 0 0 1 179.67 54.00 Z" />
+                  <path className="promo-slice promo-slice-discount" d="M100 100 L179.67 54.00 A92 92 0 0 1 179.67 146.00 Z" />
+                  <path className="promo-slice promo-slice-free" d="M100 100 L179.67 146.00 A92 92 0 0 1 100.00 192.00 Z" />
+                  <path className="promo-slice promo-slice-fifty" d="M100 100 L100.00 192.00 A92 92 0 0 1 20.33 146.00 Z" />
+                  <path className="promo-slice promo-slice-eighth" d="M100 100 L20.33 146.00 A92 92 0 0 1 20.33 54.00 Z" />
+                  <path className="promo-slice promo-slice-hundred" d="M100 100 L20.33 54.00 A92 92 0 0 1 100.00 8.00 Z" />
+                  <circle className="promo-wheel-rim" cx="100" cy="100" r="92" />
+                  <circle className="promo-wheel-inner-ring" cx="100" cy="100" r="45" />
+                  <circle className="promo-wheel-center" cx="100" cy="100" r="23" />
+                  <text className="promo-wheel-label promo-wheel-label-good" x="129" y="47"><tspan x="129" dy="0">5%</tspan><tspan x="129" dy="10">Off</tspan><tspan x="129" dy="10">Next</tspan></text>
+                  <text className="promo-wheel-label promo-wheel-label-discount" x="158" y="100"><tspan x="158" dy="0">10%</tspan><tspan x="158" dy="12">Off</tspan></text>
+                  <text className="promo-wheel-label promo-wheel-label-free" x="129" y="150.2"><tspan x="129" dy="0">$10 Off</tspan><tspan x="129" dy="13">$50</tspan></text>
+                  <text className="promo-wheel-label promo-wheel-label-fifty" x="71" y="150.2"><tspan x="71" dy="0">Free</tspan><tspan x="71" dy="12">Papers</tspan></text>
+                  <text className="promo-wheel-label promo-wheel-label-eighth" x="42" y="100"><tspan x="42" dy="0">20%</tspan><tspan x="42" dy="12">Off</tspan></text>
+                  <text className="promo-wheel-label promo-wheel-label-hundred" x="71" y="49.8"><tspan x="71" dy="0">50%</tspan><tspan x="71" dy="12">Max $30</tspan></text>
+                </svg>
+              </div>
+              <span className="promo-pointer" aria-hidden="true"></span>
+            </div>
+            <button className="primary-button" type="button" onClick={onSpin} disabled={spinning}>{spinning ? "Spinning..." : "Spin"}</button>
+            {result ? (
+              <div className="prize-result">
+                <p className="eyebrow">Customer Won</p>
+                <h3>{result.prize.label}</h3>
+                <p><strong>DISCOUNT CODE AVAILABLE FOR ONE USE ONLY:</strong> {result.code}</p>
+                <p>Expires {new Date(result.expiresAt).toLocaleDateString()} and now reflects under the Discount Codes tab.</p>
+              </div>
+            ) : (
+              <p className="promo-spin-message">Click spin to generate a one-use code under Discount Codes.</p>
+            )}
+          </div>
+
+          <div className="mini-card prize-rules-card">
+            <h3>Rules</h3>
+            <ul>{rules.map(rule => <li key={rule}>{rule}</li>)}</ul>
+          </div>
+        </div>
+      ) : (
+        <div className="prize-wheel-admin">
+          <div className="panel-toolbar">
+            <div>
+              <h2>Prize Wheel Odds</h2>
+              <p className="muted">Total odds: {totalChance}%</p>
+            </div>
+            <button className="primary-button" type="button" onClick={onSaveOdds}>Save Odds</button>
+            <button className="icon-button" type="button" onClick={onResetOdds}>Reset Odds</button>
+          </div>
+          <div className="table-wrap responsive-admin-table prize-wheel-table">
+            <table>
+              <thead>
+                <tr><th>Prize</th><th>Chance</th><th>Reward Settings</th></tr>
+              </thead>
+              <tbody>
+                {prizes.map(prize => (
+                  <tr key={prize.id}>
+                    <td data-label="Prize">{prize.label}</td>
+                    <td data-label="Chance"><input type="number" min="0" step="0.01" value={prize.chance} onChange={event => onChanceChange(prize.id, event.target.value)} /></td>
+                    <td data-label="Reward Settings">{prize.minimumPurchase ? `$${prize.minimumPurchase} minimum. ` : ""}{prize.maxDiscount ? `$${prize.maxDiscount} max discount. ` : ""}One use only.</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QrPaymentTable({ payments, search, selectedIds = [], onToggle }) {
+  if (payments === undefined) return <div className="state-card">Loading QR payments...</div>;
+
+  const query = search.trim().toLowerCase();
+  const rows = query
+    ? payments.filter(payment =>
+        [payment.customerName, payment.note, payment.status, payment.stripeSessionId, payment.stripePaymentIntentId]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(query)
+      )
+    : payments;
+
+  if (!rows.length) return <div className="state-card">No QR payments match the current search.</div>;
+  const selected = new Set(selectedIds);
+
+  return (
+    <div className="table-wrap responsive-admin-table qr-payment-table">
+      <table>
+        <thead>
+          <tr>
+            <th className="select-cell">Select</th><th>Amount</th><th>Status</th><th>Name</th><th>Note</th><th>Stripe Session</th><th>Payment Intent</th><th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(payment => (
+            <tr key={payment._id}>
+              <td className="select-cell" data-label="Select">
+                <input
+                  type="checkbox"
+                  checked={selected.has(payment._id)}
+                  onChange={() => onToggle(payment._id)}
+                  aria-label={`Select QR payment ${payment._id}`}
+                />
+              </td>
+              <td data-label="Amount">{money(payment.amount)}</td>
+              <td data-label="Status"><span className={`payment-status ${payment.status}`}>{payment.status}</span></td>
+              <td data-label="Name">{payment.customerName || "Walk-in"}</td>
+              <td data-label="Note">{payment.note || "-"}</td>
+              <td data-label="Stripe Session">{payment.stripeSessionId || "-"}</td>
+              <td data-label="Payment Intent">{payment.stripePaymentIntentId || "-"}</td>
+              <td data-label="Created">{new Date(payment.createdAt).toLocaleString()}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function discountLabel(code) {
+  if (code.type === "percent") return `${code.value}% off${code.maxDiscount ? ` up to ${money(code.maxDiscount)}` : ""}`;
+  if (code.type === "fixed") return `${money(code.value)} off${code.minimumPurchase ? ` $${code.minimumPurchase}+` : ""}`;
+  if (code.type === "free_1g") return "Free 1g";
+  if (code.type === "free_eighth") return "Free 1/8th";
+  if (code.type === "free_rolling_papers") return "Free Rolling Papers";
+  return code.type;
+}
+
+function DiscountCodeTable({ codes, onEdit, onDelete }) {
+  if (codes === undefined) return <div className="state-card">Loading discount codes...</div>;
+  if (!codes.length) return <div className="state-card">No discount codes yet.</div>;
+
+  return (
+    <div className="table-wrap discount-code-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th><th>Reward</th><th>Status</th><th>Uses</th><th>Expires</th><th>Note</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {codes.map(code => (
+            <tr key={code._id}>
+              <td data-label="Code">{code.code}</td>
+              <td data-label="Reward">{discountLabel(code)}</td>
+              <td data-label="Status"><span className={`payment-status ${code.active ? "paid" : "failed"}`}>{code.active ? "Active" : "Inactive"}</span></td>
+              <td data-label="Uses">{code.uses}{code.maxUses ? ` / ${code.maxUses}` : ""}</td>
+              <td data-label="Expires">{code.expiresAt ? new Date(code.expiresAt).toLocaleDateString() : "-"}</td>
+              <td data-label="Note">{code.note || "-"}</td>
+              <td className="actions discount-code-actions">
+                <div className="action-group discount-action-group">
+                  <button className="icon-button discount-edit-button" type="button" onClick={() => onEdit(code)}>Edit</button>
+                  <button className="icon-button danger discount-delete-button" type="button" onClick={() => onDelete(code._id)}>Delete</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
