@@ -16,7 +16,7 @@ export default function InventoryTable({ inventory, onEdit, onDelete }) {
       <table>
         <thead>
           <tr>
-            <th>Image</th><th>Name</th><th>Type</th><th>Grams</th><th>Pickup Price</th><th>Online Price</th><th>Potency</th><th>Availability</th><th>Actions</th>
+            <th>Image</th><th>Name</th><th>Type</th><th>Grams</th><th>Pickup Price</th><th>Online Price</th><th>Potency</th><th>Featured</th><th>Availability</th><th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -31,6 +31,7 @@ export default function InventoryTable({ inventory, onEdit, onDelete }) {
               <td data-label="Pickup Price">{money(strain.price)}</td>
               <td data-label="Online Price">{money(strain.onlinePrice ?? strain.price)}</td>
               <td data-label="Potency">{strain.potency}</td>
+              <td data-label="Featured">{strain.featured ? "Featured" : "-"}</td>
               <td data-label="Availability">{(strain.available ?? Number(strain.quantity ?? 0) > 0) ? "Available" : "Not Available"}</td>
               <td className="actions">
                 <div className="action-group">
