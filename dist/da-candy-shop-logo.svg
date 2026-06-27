@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320" role="img" aria-labelledby="title desc">
+  <title id="title">Da Candy Shop</title>
+  <desc id="desc">Da Candy Shop white wordmark with yellow and green accents on black.</desc>
+  <rect width="720" height="320" rx="26" fill="#020202"/>
+  <g filter="url(#softGlow)">
+    <path d="M112 113h168" stroke="#44c51b" stroke-width="5" stroke-linecap="square"/>
+    <path d="M440 113h168" stroke="#f8df00" stroke-width="5" stroke-linecap="square"/>
+    <text x="360" y="128" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="500" letter-spacing="34" fill="#f8df00">DA</text>
+    <text x="360" y="205" text-anchor="middle" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="92" font-weight="900" letter-spacing="13" fill="#ffffff">CANDY</text>
+    <path d="M272 205l24-48 24 48h-48z" fill="#f8df00"/>
+    <text x="360" y="272" text-anchor="middle" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="48" font-weight="900" letter-spacing="58" fill="#44c51b">SHOP</text>
+  </g>
+  <defs>
+    <filter id="softGlow" x="-8%" y="-8%" width="116%" height="116%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"/>
+      <feOffset dy="1" result="offset"/>
+      <feMerge>
+        <feMergeNode in="offset"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+</svg>
