@@ -11,6 +11,7 @@ import InventoryTable from "../components/InventoryTable.jsx";
 import Modal from "../components/Modal.jsx";
 import { useToast } from "../components/Toast.jsx";
 import { money } from "../lib/format.js";
+import { optimizeInventoryImage } from "../lib/imageOptimizer.js";
 import { useDebounce } from "../hooks/useDebounce.js";
 
 const blankStrain = { name: "", strainType: "Hybrid", price: 10, onlinePrice: 10, grams: 3.5, potency: "Medium", description: "", image: "", available: true, featured: false };
@@ -22,6 +23,7 @@ const convexApi = {
   },
   inventory: {
     listInventory: makeFunctionReference("inventory:listInventory"),
+    generateImageUploadUrl: makeFunctionReference("inventory:generateImageUploadUrl"),
     upsertStrain: makeFunctionReference("inventory:upsertStrain"),
     deleteStrain: makeFunctionReference("inventory:deleteStrain")
   },
@@ -135,36 +137,6 @@ function animateWheelRotation(setRotation, from, to, duration, easing = progress
   });
 }
 
-function imageFileToDataUrl(file) {
-  if (!file || file.size === 0) return Promise.resolve("");
-
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Image could not be read."));
-    reader.onload = () => {
-      const image = new Image();
-      image.onerror = () => reject(new Error("Image could not be loaded."));
-      image.onload = () => {
-        const maxSize = 600;
-        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.max(1, Math.round(image.width * scale));
-        canvas.height = Math.max(1, Math.round(image.height * scale));
-        const context = canvas.getContext("2d");
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/webp", 0.72);
-        if (dataUrl.length > 700000) {
-          reject(new Error("Image is too large. Try a smaller photo."));
-          return;
-        }
-        resolve(dataUrl);
-      };
-      image.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
 function imageSrc(image) {
   if (!image) return "";
   if (image.startsWith("assets/")) return `../${image}`;
@@ -226,6 +198,7 @@ export default function Dashboard({ adminToken, onLogout }) {
   const deleteOrder = useMutation(convexApi.orders.deleteOrder);
   const deleteOrders = useMutation(convexApi.orders.deleteOrders);
   const upsertStrain = useMutation(convexApi.inventory.upsertStrain);
+  const generateImageUploadUrl = useMutation(convexApi.inventory.generateImageUploadUrl);
   const deleteStrain = useMutation(convexApi.inventory.deleteStrain);
   const upsertDiscountCode = useMutation(convexApi.discountCodes.upsertDiscountCode);
   const deleteDiscountCode = useMutation(convexApi.discountCodes.deleteDiscountCode);
@@ -309,8 +282,22 @@ export default function Dashboard({ adminToken, onLogout }) {
       const pickupPrice = numberFromForm(form.price);
       const onlinePrice = numberFromForm(form.onlinePrice, pickupPrice);
       const grams = numberFromForm(form.grams, 3.5);
-      const uploadedImage = await imageFileToDataUrl(formData.get("imageFile"));
-      const image = uploadedImage || String(form.image || "").trim() || editing?.image || "";
+      const imageFile = formData.get("imageFile");
+      let imageStorageId = editing?.imageStorageId;
+      if (imageFile?.size) {
+        const optimizedFile = await optimizeInventoryImage(imageFile);
+        const uploadUrl = await generateImageUploadUrl({ adminToken });
+        const response = await fetch(uploadUrl, {
+          method: "POST",
+          headers: { "Content-Type": "image/webp" },
+          body: optimizedFile
+        });
+        if (!response.ok) throw new Error("Inventory image upload failed.");
+        ({ storageId: imageStorageId } = await response.json());
+      }
+      const image = imageStorageId
+        ? undefined
+        : String(form.image || "").trim() || editing?.image || "";
 
       await upsertStrain({
         adminToken,
@@ -319,6 +306,7 @@ export default function Dashboard({ adminToken, onLogout }) {
         strainType: form.strainType,
         description: form.description,
         image,
+        imageStorageId,
         potency: form.potency,
         price: pickupPrice,
         onlinePrice,
@@ -425,13 +413,9 @@ export default function Dashboard({ adminToken, onLogout }) {
   }
 
   async function handleImageFileChange(event) {
-    try {
-      const preview = await imageFileToDataUrl(event.target.files?.[0]);
-      if (preview) setImagePreview(preview);
-    } catch (error) {
-      toast.push(error.message || "Image could not be previewed.", "error");
-      event.target.value = "";
-    }
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setImagePreview(URL.createObjectURL(file));
   }
 
   function handleTabChange(tab) {
@@ -547,7 +531,7 @@ export default function Dashboard({ adminToken, onLogout }) {
             <label>Grams <input name="grams" type="number" step="0.1" min="0.1" defaultValue={editing.grams ?? 3.5} required /></label>
             <label>Potency <select name="potency" defaultValue={editing.potency}><option>Low</option><option>Medium</option><option>High</option></select></label>
             <label>Image URL <input name="image" defaultValue={editing.image?.startsWith("data:") ? "" : editing.image} placeholder="Paste image URL or upload below" /></label>
-            <label>Upload Image <input name="imageFile" type="file" accept="image/*" onChange={handleImageFileChange} /></label>
+            <label>Upload Image <input name="imageFile" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={handleImageFileChange} /></label>
             {imagePreview && (
               <div className="image-preview wide">
                 <img src={imageSrc(imagePreview)} alt={`${editing.name || "Strain"} preview`} />

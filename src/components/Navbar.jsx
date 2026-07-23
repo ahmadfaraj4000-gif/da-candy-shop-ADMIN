@@ -21,7 +21,7 @@ export default function Navbar({ activeTab, onTabChange, onLogout }) {
   return (
     <header className={`admin-nav ${menuOpen ? "menu-open" : ""}`}>
       <div className="admin-brand">
-        <img src={`${import.meta.env.BASE_URL}da-candy-shop-logo.png`} alt="Da Candy Shop" />
+        <img src={`${import.meta.env.BASE_URL}da-candy-shop-logo.webp`} alt="Da Candy Shop" />
       </div>
 
       <button
