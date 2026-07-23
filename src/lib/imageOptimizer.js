@@ -2,6 +2,8 @@ const MAX_SOURCE_BYTES = 15 * 1024 * 1024;
 const MAX_SOURCE_PIXELS = 60_000_000;
 const TARGET_BYTES = 350 * 1024;
 const MAX_OUTPUT_BYTES = 500 * 1024;
+const OUTPUT_QUALITIES = [0.8, 0.7, 0.6, 0.5, 0.4];
+const MAX_SIZE_ATTEMPTS = 8;
 
 export async function optimizeInventoryImage(file) {
   if (!file?.size || !file.type.startsWith("image/")) {
@@ -20,7 +22,7 @@ export async function optimizeInventoryImage(file) {
     let scale = Math.min(1, 1200 / bitmap.width, 900 / bitmap.height);
     let bestBlob = null;
 
-    for (let sizeAttempt = 0; sizeAttempt < 3; sizeAttempt += 1) {
+    for (let sizeAttempt = 0; sizeAttempt < MAX_SIZE_ATTEMPTS; sizeAttempt += 1) {
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.round(bitmap.width * scale));
       canvas.height = Math.max(1, Math.round(bitmap.height * scale));
@@ -32,15 +34,15 @@ export async function optimizeInventoryImage(file) {
         canvas.height
       );
 
-      for (const quality of [0.8, 0.7, 0.6]) {
+      for (const quality of OUTPUT_QUALITIES) {
         const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/webp", quality));
         if (!blob) continue;
-        bestBlob = blob;
+        if (!bestBlob || blob.size < bestBlob.size) bestBlob = blob;
         if (blob.size <= TARGET_BYTES) break;
       }
 
       if (bestBlob?.size <= TARGET_BYTES) break;
-      scale *= 0.82;
+      scale *= 0.8;
     }
 
     if (!bestBlob || bestBlob.type !== "image/webp" || bestBlob.size > MAX_OUTPUT_BYTES) {
