@@ -289,7 +289,7 @@ export default function Dashboard({ adminToken, onLogout }) {
         const uploadUrl = await generateImageUploadUrl({ adminToken });
         const response = await fetch(uploadUrl, {
           method: "POST",
-          headers: { "Content-Type": "image/webp" },
+          headers: { "Content-Type": optimizedFile.type },
           body: optimizedFile
         });
         if (!response.ok) throw new Error("Inventory image upload failed.");
