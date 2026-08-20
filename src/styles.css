@@ -1122,6 +1122,275 @@ td.actions .icon-button {
   }
 }
 
+/* Storefront-aligned admin design system. */
+:root {
+  --bg: #070907;
+  --panel: #0c0f0c;
+  --surface: #111511;
+  --line: rgba(240, 244, 232, .13);
+  --text: #f4f1e8;
+  --muted: #a8afa5;
+  --green: #5cb418;
+  --green-hover: #5cb418;
+  --gold: #f0d853;
+  --cream: #f4f1e8;
+  --admin-surface: #0c0f0c;
+  --admin-line: rgba(240, 244, 232, .13);
+  --admin-muted: #a8afa5;
+  --admin-green: #5cb418;
+  --admin-gold: #5cb418;
+  --button-line: rgba(240, 244, 232, .16);
+  --button-line-hover: #5cb418;
+  --button-glass: rgba(255,255,255,.035);
+  --button-glass-hover: rgba(92,180,24,.09);
+}
+
+body {
+  color: var(--text);
+  background:
+    radial-gradient(circle at 78% 0, rgba(92,180,24,.075), transparent 27rem),
+    radial-gradient(circle at 8% 42%, rgba(255,255,255,.025), transparent 30rem),
+    var(--bg);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: .008em;
+  line-height: 1.55;
+}
+
+body::before,
+body::after,
+.login-page::before,
+.dashboard::before { display: none; }
+
+h1, h2, h3,
+.login-card h1,
+.modal h2,
+.panel h2,
+.promo-spinner-copy strong {
+  font-family: inherit;
+  letter-spacing: .008em;
+  line-height: 1.14;
+  text-shadow: none;
+}
+
+p { line-height: 1.7; }
+
+.login-page {
+  min-height: 100svh;
+  padding: clamp(1rem, 4vw, 2.5rem);
+  background: radial-gradient(circle at 50% 18%, rgba(92,180,24,.08), transparent 25rem);
+}
+
+.login-card {
+  width: min(100%, 440px);
+  gap: 1.15rem;
+  padding: clamp(1.25rem, 4vw, 2rem);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: 0 28px 80px rgba(0,0,0,.36);
+  backdrop-filter: none;
+}
+
+.login-brand {
+  display: grid;
+  justify-items: center;
+  gap: .6rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+
+.login-logo {
+  width: 132px;
+  height: 62px;
+  object-fit: cover;
+  object-position: center;
+  filter: none;
+}
+
+.login-portal-title,
+.login-eyebrow {
+  margin: 0;
+  color: var(--green);
+  font-size: .68rem;
+  font-weight: 850;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.login-heading {
+  display: grid;
+  justify-items: center;
+  gap: .45rem;
+  padding: .5rem 0 .6rem;
+  text-align: center;
+}
+
+.login-mark {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid rgba(92,180,24,.42);
+  border-radius: 10px;
+  color: var(--green);
+  background: rgba(92,180,24,.08);
+  box-shadow: none;
+}
+
+.login-eyebrow { margin: 0 0 .35rem; }
+.login-heading h1 { margin: 0; font-size: clamp(2.2rem, 7vw, 2.8rem); font-weight: 650; line-height: 1.08; }
+.login-heading .muted { max-width: 330px; margin: 0; line-height: 1.55; }
+
+label {
+  gap: .5rem;
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .035em;
+}
+
+input,
+select,
+textarea {
+  min-height: 46px;
+  padding: .75rem .8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: #090c09;
+  letter-spacing: .01em;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(92,180,24,.12);
+}
+
+.checkbox-row { color: var(--muted); }
+.checkbox-row input { accent-color: var(--green); }
+.form-error { margin: 0; color: #ff8e70; }
+
+.primary-button,
+.tab-list button,
+.icon-button,
+.mobile-tab-menu-button {
+  min-height: 40px;
+  padding: .58rem .82rem;
+  border: 1px solid var(--button-line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--button-glass);
+  box-shadow: none;
+  text-shadow: none;
+  font-weight: 800;
+  letter-spacing: .012em;
+  backdrop-filter: none;
+}
+
+.primary-button,
+.tab-list button.active,
+.mobile-tab-menu-button {
+  color: #071006;
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.primary-button:hover,
+.tab-list button.active:hover,
+.tab-list button:hover,
+.icon-button:hover,
+.mobile-tab-menu-button:hover {
+  color: var(--text);
+  border-color: var(--green);
+  background: rgba(92,180,24,.1);
+  box-shadow: none;
+  transform: translateY(-1px);
+}
+
+.primary-button:hover,
+.tab-list button.active:hover,
+.mobile-tab-menu-button:hover {
+  color: #071006;
+  background: var(--green);
+}
+
+.admin-nav {
+  min-height: 72px;
+  gap: 1rem;
+  padding: .7rem clamp(1rem, 3vw, 1.75rem);
+  border-bottom: 1px solid var(--line);
+  background: rgba(7,9,7,.9);
+  box-shadow: none;
+  backdrop-filter: blur(18px) saturate(125%);
+}
+
+.admin-brand img {
+  width: clamp(122px, 13vw, 158px);
+  max-height: 54px;
+  filter: none;
+}
+
+.tab-list { gap: .4rem; }
+.tab-list button { min-height: 40px; padding-inline: .75rem; }
+.logout-button { border-radius: 50%; }
+
+.dashboard {
+  width: min(100%, 1540px);
+  margin: 0 auto;
+  gap: 1rem;
+  padding: clamp(1rem, 3vw, 1.75rem);
+}
+
+.login-card,
+.panel,
+.modal,
+.metric-grid article,
+.mini-card,
+.table-wrap,
+.state-card,
+.toast {
+  border-color: var(--line);
+  border-radius: 12px;
+  background: rgba(12,15,12,.94);
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.metric-grid { gap: .75rem; }
+.metric-grid article { padding: 1rem 1.1rem; }
+.metric-grid span, .admin-footer, .state-card, .muted, td { color: var(--muted); }
+.metric-grid strong { color: var(--green); font-size: clamp(1.65rem, 3vw, 2.35rem); letter-spacing: .01em; }
+
+.panel { gap: 1rem; padding: 1rem; }
+.panel h2 { margin: 0; font-weight: 650; }
+.panel:hover, .metric-grid article:hover, .mini-card:hover { border-color: rgba(92,180,24,.34); }
+
+.table-wrap { overflow-x: auto; }
+table { min-width: 980px; }
+th, td { padding: .78rem; border-color: rgba(240,244,232,.09); line-height: 1.5; }
+th { color: var(--green); background: rgba(255,255,255,.025); letter-spacing: .07em; }
+tbody tr:hover { background: rgba(92,180,24,.035); }
+
+.search-bar svg { color: var(--green); }
+.pill { color: var(--green); }
+.payment-status.paid { color: var(--green); border-color: rgba(92,180,24,.38); background: rgba(92,180,24,.09); }
+.toast { color: var(--text); }
+
+.promo-slice-0,
+.promo-slice-good { fill: #5cb418; }
+.prize-result { border-color: rgba(92,180,24,.42); background: rgba(92,180,24,.08); }
+
+@media (max-width: 720px) {
+  .admin-nav { min-height: 0; padding: .6rem .75rem; }
+  .admin-brand img { width: 108px; max-height: 44px; }
+  .dashboard { padding: .75rem; }
+  .login-card { padding: 1.15rem; }
+  .login-logo { width: 116px; height: 55px; }
+}
+
 /* Final admin table controls: spaced actions, selectable rows, mobile-safe toolbar. */
 .bulk-actions {
   display: flex;
@@ -1686,3 +1955,39 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* Brand-color lock: keep the final admin layer aligned with the storefront. */
+:root {
+  --green: #5cb418;
+  --green-hover: #5cb418;
+  --admin-green: #5cb418;
+  --admin-gold: #5cb418;
+}
+
+.primary-button,
+.tab-list button.active,
+.mobile-tab-menu-button {
+  color: #071006;
+  border-color: #5cb418;
+  background: #5cb418;
+}
+
+.primary-button:hover,
+.tab-list button.active:hover,
+.mobile-tab-menu-button:hover {
+  color: #071006;
+  border-color: #5cb418;
+  background: #5cb418;
+}
+
+.tab-list button:hover,
+.icon-button:hover {
+  color: var(--text);
+  border-color: #5cb418;
+  background: rgba(92,180,24,.1);
+}
+
+.promo-slice-0,
+.promo-slice-good { fill: #5cb418; }
+
+.select-cell input[type="checkbox"] { accent-color: #5cb418; }
