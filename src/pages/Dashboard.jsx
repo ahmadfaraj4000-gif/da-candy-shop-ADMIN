@@ -14,7 +14,26 @@ import { money } from "../lib/format.js";
 import { optimizeInventoryImage } from "../lib/imageOptimizer.js";
 import { useDebounce } from "../hooks/useDebounce.js";
 
-const blankStrain = { name: "", strainType: "Hybrid", price: 10, onlinePrice: 10, grams: 3.5, potency: "Medium", description: "", image: "", available: true, featured: false };
+const inventoryWeightOptions = [
+  { key: "eighth", label: "3.5 grams", grams: 3.5 },
+  { key: "quarter", label: "7 grams", grams: 7 },
+  { key: "half", label: "14 grams", grams: 14 },
+  { key: "ounce", label: "28 grams", grams: 28 }
+];
+const blankStrain = {
+  name: "",
+  strainType: "Hybrid",
+  price: 0,
+  onlinePrice: 0,
+  grams: 3.5,
+  weightPrices: {},
+  onlineWeightPrices: {},
+  potency: "Medium",
+  description: "",
+  image: "",
+  available: true,
+  featured: false
+};
 const convexApi = {
   orders: {
     listOrders: makeFunctionReference("orders:listOrders"),
@@ -35,10 +54,17 @@ const convexApi = {
     listDiscountCodes: makeFunctionReference("discountCodes:listDiscountCodes"),
     upsertDiscountCode: makeFunctionReference("discountCodes:upsertDiscountCode"),
     deleteDiscountCode: makeFunctionReference("discountCodes:deleteDiscountCode")
+  },
+  promotions: {
+    listPromotions: makeFunctionReference("promotions:listPromotions"),
+    upsertPromotion: makeFunctionReference("promotions:upsertPromotion"),
+    setPromotionActive: makeFunctionReference("promotions:setPromotionActive"),
+    deletePromotion: makeFunctionReference("promotions:deletePromotion")
   }
 };
 
 const blankDiscountCode = { code: "", type: "percent", value: 10, active: true, maxUses: undefined, expiresAt: "", note: "", minimumPurchase: undefined, maxDiscount: undefined };
+const blankPromotion = { name: "", headline: "", description: "", inventoryIds: [], discountType: "percent", value: 10, active: true, startsAt: undefined, endsAt: undefined };
 
 const defaultPrizeWheelPrizes = [
   { id: "five_percent", label: "5% Off Next Purchase", chance: 48, type: "percent", value: 5 },
@@ -99,6 +125,13 @@ function todayDateInput() {
   return `${year}-${month}-${day}`;
 }
 
+function dateTimeInputValue(timestamp) {
+  if (!timestamp) return "";
+  const date = new Date(timestamp);
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
 function choosePrize(prizes) {
   const totalChance = prizes.reduce((sum, prize) => sum + Number(prize.chance || 0), 0);
   let draw = Math.random() * totalChance;
@@ -148,6 +181,25 @@ function numberFromForm(value, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function optionalPriceFromForm(value) {
+  if (String(value ?? "").trim() === "") return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function legacyWeightKey(grams) {
+  const numericGrams = Number(grams ?? 3.5);
+  return inventoryWeightOptions.find(option => Math.abs(option.grams - numericGrams) < .01)?.key || "eighth";
+}
+
+function inventoryPriceValue(strain, key, online = false) {
+  const prices = online ? strain.onlineWeightPrices : strain.weightPrices;
+  if (Number(prices?.[key]) > 0) return prices[key];
+  const legacyKey = legacyWeightKey(strain.grams);
+  if (key !== legacyKey) return "";
+  return online ? Number(strain.onlinePrice ?? strain.price) || "" : Number(strain.price) || "";
+}
+
 function promoDetail(order) {
   if (!order?.promo) return "None";
   const parts = [order.promo.label];
@@ -173,6 +225,7 @@ export default function Dashboard({ adminToken, onLogout }) {
   const [selectedPaymentIds, setSelectedPaymentIds] = useState([]);
   const [editing, setEditing] = useState(null);
   const [editingDiscount, setEditingDiscount] = useState(null);
+  const [editingPromotion, setEditingPromotion] = useState(null);
   const [wheelMode, setWheelMode] = useState("customer");
   const [prizeWheelPrizes, setPrizeWheelPrizes] = useState(() => {
     try {
@@ -190,11 +243,14 @@ export default function Dashboard({ adminToken, onLogout }) {
   const debouncedSearch = useDebounce(search);
 
   const orderArgs = { adminToken, search: debouncedSearch };
-  const inventoryArgs = type ? { search: debouncedSearch, strainType: type } : { search: debouncedSearch };
+  const inventoryArgs = activeTab === "inventory"
+    ? (type ? { search: debouncedSearch, strainType: type } : { search: debouncedSearch })
+    : {};
   const orders = useQuery(convexApi.orders.listOrders, orderArgs);
   const inventory = useQuery(convexApi.inventory.listInventory, inventoryArgs);
   const qrPayments = useQuery(convexApi.payments.listInStorePayments, { adminToken });
   const discountCodes = useQuery(convexApi.discountCodes.listDiscountCodes, { adminToken });
+  const promotions = useQuery(convexApi.promotions.listPromotions, { adminToken });
   const deleteOrder = useMutation(convexApi.orders.deleteOrder);
   const deleteOrders = useMutation(convexApi.orders.deleteOrders);
   const upsertStrain = useMutation(convexApi.inventory.upsertStrain);
@@ -202,6 +258,9 @@ export default function Dashboard({ adminToken, onLogout }) {
   const deleteStrain = useMutation(convexApi.inventory.deleteStrain);
   const upsertDiscountCode = useMutation(convexApi.discountCodes.upsertDiscountCode);
   const deleteDiscountCode = useMutation(convexApi.discountCodes.deleteDiscountCode);
+  const upsertPromotion = useMutation(convexApi.promotions.upsertPromotion);
+  const setPromotionActive = useMutation(convexApi.promotions.setPromotionActive);
+  const deletePromotion = useMutation(convexApi.promotions.deletePromotion);
   const deleteInStorePayments = useMutation(convexApi.payments.deleteInStorePayments);
 
   useEffect(() => {
@@ -279,9 +338,17 @@ export default function Dashboard({ adminToken, onLogout }) {
     submitButton.textContent = "Saving...";
 
     try {
-      const pickupPrice = numberFromForm(form.price);
-      const onlinePrice = numberFromForm(form.onlinePrice, pickupPrice);
-      const grams = numberFromForm(form.grams, 3.5);
+      const weightPrices = {};
+      inventoryWeightOptions.forEach(({ key }) => {
+        const price = optionalPriceFromForm(form[`price_${key}`]);
+        if (!price || price <= 0) throw new Error(`Add a price for ${inventoryWeightOptions.find(option => option.key === key)?.label}.`);
+        weightPrices[key] = price;
+      });
+      const onlineWeightPrices = { ...weightPrices };
+      const primaryWeight = inventoryWeightOptions[0];
+      const pickupPrice = weightPrices[primaryWeight.key];
+      const onlinePrice = pickupPrice;
+      const grams = primaryWeight.grams;
       const imageFile = formData.get("imageFile");
       let imageStorageId = editing?.imageStorageId;
       if (imageFile?.size) {
@@ -311,6 +378,8 @@ export default function Dashboard({ adminToken, onLogout }) {
         price: pickupPrice,
         onlinePrice,
         grams,
+        weightPrices,
+        onlineWeightPrices,
         available: form.available === "on",
         featured: form.featured === "on"
       });
@@ -357,6 +426,50 @@ export default function Dashboard({ adminToken, onLogout }) {
   async function handleDeleteDiscountCode(id) {
     await deleteDiscountCode({ adminToken, id });
     toast.push("Discount code deleted.");
+  }
+
+  async function savePromotion(event) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const form = Object.fromEntries(formData);
+    const inventoryIds = [...new Set(formData.getAll("inventoryIds").map(String))];
+    const startsAt = form.startsAt ? new Date(form.startsAt).getTime() : undefined;
+    const endsAt = form.endsAt ? new Date(form.endsAt).getTime() : undefined;
+
+    try {
+      await upsertPromotion({
+        adminToken,
+        id: editingPromotion?._id,
+        name: String(form.name || "").trim(),
+        headline: String(form.headline || "").trim(),
+        description: String(form.description || "").trim(),
+        inventoryIds,
+        discountType: form.discountType,
+        value: numberFromForm(form.value),
+        active: form.active === "on",
+        startsAt,
+        endsAt
+      });
+      setEditingPromotion(null);
+      toast.push(form.active === "on" ? "Promotion saved and published live." : "Promotion saved as a draft. It will not appear on the storefront.");
+    } catch (error) {
+      toast.push(error.message || "Promotion could not be saved.", "error");
+    }
+  }
+
+  async function togglePromotion(promotion) {
+    try {
+      await setPromotionActive({ adminToken, id: promotion._id, active: !promotion.active });
+      toast.push(promotion.active ? "Promotion stopped and returned to Draft." : "Promotion published live on the storefront.");
+    } catch (error) {
+      toast.push(error.message || "Promotion status could not be changed.", "error");
+    }
+  }
+
+  async function handleDeletePromotion(id) {
+    if (!confirm("Delete this promotion?")) return;
+    await deletePromotion({ adminToken, id });
+    toast.push("Promotion deleted.");
   }
 
 
@@ -435,7 +548,7 @@ export default function Dashboard({ adminToken, onLogout }) {
         </section>
         <section className="panel">
           <div className="panel-toolbar">
-            <SearchBar value={search} onChange={setSearch} placeholder={activeTab === "orders" ? "Search orders" : activeTab === "payments" ? "Search QR payments" : activeTab === "discounts" ? "Search discount codes" : activeTab === "prizeWheel" ? "Prize wheel" : "Search strains"} />
+            <SearchBar value={search} onChange={setSearch} placeholder={activeTab === "orders" ? "Search orders" : activeTab === "payments" ? "Search QR payments" : activeTab === "discounts" ? "Search discount codes" : activeTab === "promotions" ? "Search promotions" : activeTab === "prizeWheel" ? "Prize wheel" : "Search strains"} />
             {activeTab === "orders" && (
               <BulkActions
                 total={(orders || []).length}
@@ -454,6 +567,7 @@ export default function Dashboard({ adminToken, onLogout }) {
             )}
             {activeTab === "inventory" && <Filters type={type} onTypeChange={setType} />}
             {activeTab === "inventory" && <button className="primary-button" onClick={() => setEditing(blankStrain)}><Plus size={18} /> Add Strain</button>}
+            {activeTab === "promotions" && <button className="primary-button" onClick={() => setEditingPromotion(blankPromotion)}><Plus size={18} /> Add Promotion</button>}
             {activeTab === "discounts" && <button className="primary-button" onClick={() => setEditingDiscount(blankDiscountCode)}><Plus size={18} /> Add Code</button>}
           </div>
           {activeTab === "orders" && (
@@ -464,6 +578,9 @@ export default function Dashboard({ adminToken, onLogout }) {
           )}
           {activeTab === "inventory" && (
             <InventoryTable inventory={inventory} onEdit={setEditing} onDelete={handleDeleteStrain} />
+          )}
+          {activeTab === "promotions" && (
+            <PromotionTable promotions={promotions} search={debouncedSearch} onEdit={setEditingPromotion} onToggle={togglePromotion} onDelete={handleDeletePromotion} />
           )}
           {activeTab === "discounts" && (
             <DiscountCodeTable codes={discountCodes} onEdit={setEditingDiscount} onDelete={handleDeleteDiscountCode} />
@@ -483,7 +600,7 @@ export default function Dashboard({ adminToken, onLogout }) {
               result={wheelResult}
             />
           )}
-          {!["orders", "payments", "inventory", "discounts", "prizeWheel"].includes(activeTab) && (
+          {!["orders", "payments", "inventory", "promotions", "discounts", "prizeWheel"].includes(activeTab) && (
             <div className="state-card">Choose an admin section.</div>
           )}
         </section>
@@ -500,7 +617,7 @@ export default function Dashboard({ adminToken, onLogout }) {
             <p><strong>Promo</strong>{promoDetail(viewOrder)}</p>
           </div>
           <h3>Products Ordered</h3>
-          {viewOrder.items?.map(item => <p key={`${item.productId}-${item.name}`}>{item.name} x {item.quantity}</p>)}
+          {viewOrder.items?.map(item => <p key={`${item.productId}-${item.name}`}>{item.name} ({Number(item.grams ?? 3.5)}g) x {item.quantity}</p>)}
         </Modal>
       )}
 
@@ -526,9 +643,18 @@ export default function Dashboard({ adminToken, onLogout }) {
           <form className="strain-form" onSubmit={saveStrain}>
             <label>Name <input name="name" defaultValue={editing.name} required /></label>
             <label>Type <select name="strainType" defaultValue={editing.strainType}><option>Indica</option><option>Sativa</option><option>Hybrid</option></select></label>
-            <label>Pickup Price <input name="price" type="number" step="0.01" min="0.01" defaultValue={editing.price} required /></label>
-            <label>Online Price <input name="onlinePrice" type="number" step="0.01" min="0.01" defaultValue={editing.onlinePrice ?? editing.price} required /></label>
-            <label>Grams <input name="grams" type="number" step="0.1" min="0.1" defaultValue={editing.grams ?? 3.5} required /></label>
+            <fieldset className="weight-price-editor wide">
+              <legend>Prices by weight</legend>
+              <p className="muted">Enter all four prices. The same verified prices are used on the menu, at pickup, and in Stripe.</p>
+              <div className="weight-price-grid">
+                {inventoryWeightOptions.map(option => (
+                  <div className="weight-price-card" key={option.key}>
+                    <strong>{option.label}</strong>
+                    <label>Price <input name={`price_${option.key}`} type="number" step="0.01" min="0.01" defaultValue={inventoryPriceValue(editing, option.key)} placeholder="$0.00" required /></label>
+                  </div>
+                ))}
+              </div>
+            </fieldset>
             <label>Potency <select name="potency" defaultValue={editing.potency}><option>Low</option><option>Medium</option><option>High</option></select></label>
             <label>Image URL <input name="image" defaultValue={editing.image?.startsWith("data:") ? "" : editing.image} placeholder="Paste image URL or upload below" /></label>
             <label>Upload Image <input name="imageFile" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={handleImageFileChange} /></label>
@@ -569,6 +695,55 @@ export default function Dashboard({ adminToken, onLogout }) {
           </form>
         </Modal>
       )}
+
+      {editingPromotion && (
+        <Modal title={editingPromotion._id ? "Edit Promotion" : "Add Promotion"} onClose={() => setEditingPromotion(null)}>
+          <form className="strain-form promotion-form" onSubmit={savePromotion}>
+            <label>Internal Name <input name="name" defaultValue={editingPromotion.name} placeholder="Weekend flower special" required /></label>
+            <fieldset className="promotion-flower-picker wide">
+              <legend>Flowers</legend>
+              <p className="muted">Choose between one and four flowers. The promotion applies automatically to every selected flower.</p>
+              <div className="promotion-flower-grid">
+                {(inventory || []).map(strain => {
+                  const selectedIds = editingPromotion.inventoryIds?.length ? editingPromotion.inventoryIds : [editingPromotion.inventoryId].filter(Boolean);
+                  return (
+                    <label className="promotion-flower-option" key={strain._id}>
+                      <input
+                        name="inventoryIds"
+                        type="checkbox"
+                        value={strain._id}
+                        defaultChecked={selectedIds.includes(strain._id)}
+                        onChange={event => {
+                          const checked = event.currentTarget.form.querySelectorAll('input[name="inventoryIds"]:checked');
+                          if (checked.length > 4) {
+                            event.currentTarget.checked = false;
+                            toast.push("Choose up to four flowers.", "error");
+                          }
+                        }}
+                      />
+                      <span>{strain.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+            <label>Discount Type
+              <select name="discountType" defaultValue={editingPromotion.discountType}>
+                <option value="percent">Percent Off</option>
+                <option value="fixed">Dollar Off Each Item</option>
+              </select>
+            </label>
+            <label>Discount Value <input name="value" type="number" step="0.01" min="0.01" max={editingPromotion.discountType === "percent" ? 100 : undefined} defaultValue={editingPromotion.value} required /></label>
+            <label className="wide">Public Headline <input name="headline" defaultValue={editingPromotion.headline} placeholder="20% off Purple Planet" required /></label>
+            <label className="wide">Public Description <textarea name="description" rows="3" defaultValue={editingPromotion.description} placeholder="Available for a limited time while supplies last." required /></label>
+            <label>Starts <input name="startsAt" type="datetime-local" defaultValue={dateTimeInputValue(editingPromotion.startsAt)} /></label>
+            <label>Ends <input name="endsAt" type="datetime-local" defaultValue={dateTimeInputValue(editingPromotion.endsAt)} /></label>
+            <label className="promotion-live-control wide"><input name="active" type="checkbox" defaultChecked={editingPromotion.active ?? true} /><span><strong>Publish this promotion live</strong><small>Required for the visitor popup, flower-menu banner, and automatic checkout discount.</small></span></label>
+            <p className="muted wide">Leaving this unchecked saves a private draft that customers cannot see. Publishing it automatically stops any other live promotion.</p>
+            <button className="primary-button wide" type="submit">Save Promotion</button>
+          </form>
+        </Modal>
+      )}
     </>
   );
 }
@@ -582,6 +757,58 @@ function BulkActions({ total, selected, onSelectAll, onDeleteSelected }) {
       <button className="icon-button danger" type="button" onClick={onDeleteSelected} disabled={!selected}>
         Delete Selected{selected ? ` (${selected})` : ""}
       </button>
+    </div>
+  );
+}
+
+function promotionStatus(promotion) {
+  const now = Date.now();
+  if (!promotion.active) return { label: "Draft", className: "pending" };
+  if (promotion.startsAt && promotion.startsAt > now) return { label: "Scheduled", className: "pending" };
+  if (promotion.endsAt && promotion.endsAt < now) return { label: "Expired", className: "failed" };
+  return { label: "Live", className: "paid" };
+}
+
+function PromotionTable({ promotions, search, onEdit, onToggle, onDelete }) {
+  if (promotions === undefined) return <div className="state-card">Loading promotions...</div>;
+  const query = search.trim().toLowerCase();
+  const rows = query
+    ? promotions.filter(promotion => [promotion.name, promotion.headline, promotion.description, promotion.flowerName].join(" ").toLowerCase().includes(query))
+    : promotions;
+  if (!rows.length) return <div className="state-card">No promotions match the current search.</div>;
+
+  return (
+    <div className="table-wrap responsive-admin-table promotion-table">
+      <table>
+        <thead>
+          <tr><th>Promotion</th><th>Flowers</th><th>Discount</th><th>Status</th><th>Schedule</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {rows.map(promotion => {
+            const status = promotionStatus(promotion);
+            const discount = promotion.discountType === "percent" ? `${promotion.value}% off` : `${money(promotion.value)} off each item`;
+            const schedule = promotion.startsAt || promotion.endsAt
+              ? `${promotion.startsAt ? new Date(promotion.startsAt).toLocaleString() : "Now"} – ${promotion.endsAt ? new Date(promotion.endsAt).toLocaleString() : "No end"}`
+              : "No schedule";
+            return (
+              <tr key={promotion._id}>
+                <td data-label="Promotion"><strong>{promotion.headline}</strong><br /><span className="muted">{promotion.name}</span></td>
+                <td data-label="Flowers">{promotion.flowerName}</td>
+                <td data-label="Discount">{discount}</td>
+                <td data-label="Status"><span className={`payment-status ${status.className}`}>{status.label}</span></td>
+                <td data-label="Schedule">{schedule}</td>
+                <td className="actions" data-label="Actions">
+                  <div className="action-group promotion-actions">
+                    <button className="icon-button text-action" type="button" onClick={() => onEdit(promotion)}>Edit</button>
+                    <button className="icon-button text-action" type="button" onClick={() => onToggle(promotion)}>{promotion.active ? "Stop" : "Publish Live"}</button>
+                    <button className="icon-button text-action danger" type="button" onClick={() => onDelete(promotion._id)}>Delete</button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

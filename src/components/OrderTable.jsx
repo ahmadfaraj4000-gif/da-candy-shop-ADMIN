@@ -45,7 +45,7 @@ export default function OrderTable({ orders, selectedIds = [], onToggle, onView,
               <td data-label="Phone">{order.phone}</td>
               <td data-label="Pickup Date">{order.pickupDate}</td>
               <td data-label="Pickup Time">{order.pickupTime}</td>
-              <td data-label="Products">{order.items?.map(item => item.name).join(", ")}</td>
+              <td data-label="Products">{order.items?.map(item => `${item.name} (${Number(item.grams ?? 3.5)}g)`).join(", ")}</td>
               <td data-label="Quantities">{order.items?.map(item => item.quantity).join(", ")}</td>
               <td data-label="Promo">{promoText(order)}</td>
               <td data-label="Total">{money(order.total)}</td>

@@ -1,9 +1,10 @@
-import { CreditCard, Gift, LogOut, Menu, Package, Percent, ShoppingBag, X } from "lucide-react";
+import { CreditCard, Gift, LogOut, Megaphone, Menu, Package, Percent, ShoppingBag, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 const tabs = [
   { id: "orders", label: "Orders", Icon: ShoppingBag },
   { id: "inventory", label: "Inventory", Icon: Package },
+  { id: "promotions", label: "Promotions", Icon: Megaphone },
   { id: "payments", label: "QR Payments", Icon: CreditCard },
   { id: "discounts", label: "Discount Codes", Icon: Percent },
   { id: "prizeWheel", label: "Prize Wheel", Icon: Gift }

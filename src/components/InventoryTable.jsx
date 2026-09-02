@@ -7,6 +7,18 @@ function imageSrc(image) {
   return image;
 }
 
+const weightLabels = { eighth: "3.5g", quarter: "7g", half: "14g", ounce: "28g" };
+
+function priceSummary(strain) {
+  const prices = strain.weightPrices && Object.keys(strain.weightPrices).length
+    ? strain.weightPrices
+    : { eighth: strain.price };
+  return Object.entries(prices)
+    .filter(([, price]) => Number(price) > 0)
+    .map(([key, price]) => `${weightLabels[key] || key} ${money(price)}`)
+    .join(" · ");
+}
+
 export default function InventoryTable({ inventory, onEdit, onDelete }) {
   if (inventory === undefined) return <div className="state-card">Loading inventory...</div>;
   if (!inventory.length) return <div className="state-card">No strains match the current filters.</div>;
@@ -16,7 +28,7 @@ export default function InventoryTable({ inventory, onEdit, onDelete }) {
       <table>
         <thead>
           <tr>
-            <th>Image</th><th>Name</th><th>Type</th><th>Grams</th><th>Pickup Price</th><th>Online Price</th><th>Potency</th><th>Featured</th><th>Availability</th><th>Actions</th>
+            <th>Image</th><th>Name</th><th>Type</th><th>Prices</th><th>Potency</th><th>Featured</th><th>Availability</th><th>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -27,9 +39,7 @@ export default function InventoryTable({ inventory, onEdit, onDelete }) {
               </td>
               <td data-label="Name">{strain.name}</td>
               <td data-label="Type">{strain.strainType}</td>
-              <td data-label="Grams">{Number(strain.grams ?? 3.5)}g</td>
-              <td data-label="Pickup Price">{money(strain.price)}</td>
-              <td data-label="Online Price">{money(strain.onlinePrice ?? strain.price)}</td>
+              <td data-label="Prices" className="inventory-prices">{priceSummary(strain)}</td>
               <td data-label="Potency">{strain.potency}</td>
               <td data-label="Featured">{strain.featured ? "Featured" : "-"}</td>
               <td data-label="Availability">{(strain.available ?? Number(strain.quantity ?? 0) > 0) ? "Available" : "Not Available"}</td>
