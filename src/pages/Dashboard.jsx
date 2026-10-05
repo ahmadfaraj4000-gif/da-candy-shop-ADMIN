@@ -13,6 +13,8 @@ import { useToast } from "../components/Toast.jsx";
 import { money } from "../lib/format.js";
 import { optimizeInventoryImage } from "../lib/imageOptimizer.js";
 import { useDebounce } from "../hooks/useDebounce.js";
+import PromotionForm from "../components/PromotionForm.jsx";
+import { promotionLabel } from "../../promotion-pricing.js";
 
 const inventoryWeightOptions = [
   { key: "eighth", label: "3.5 grams", grams: 3.5 },
@@ -125,13 +127,6 @@ function todayDateInput() {
   return `${year}-${month}-${day}`;
 }
 
-function dateTimeInputValue(timestamp) {
-  if (!timestamp) return "";
-  const date = new Date(timestamp);
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-}
-
 function choosePrize(prizes) {
   const totalChance = prizes.reduce((sum, prize) => sum + Number(prize.chance || 0), 0);
   let draw = Math.random() * totalChance;
@@ -185,6 +180,12 @@ function optionalPriceFromForm(value) {
   if (String(value ?? "").trim() === "") return undefined;
   const number = Number(value);
   return Number.isFinite(number) ? number : undefined;
+}
+
+function userFacingError(error, fallback) {
+  if (typeof error?.data === "string" && error.data.trim()) return error.data;
+  if (typeof error?.data?.message === "string" && error.data.message.trim()) return error.data.message;
+  return error?.message || fallback;
 }
 
 function legacyWeightKey(grams) {
@@ -359,8 +360,14 @@ export default function Dashboard({ adminToken, onLogout }) {
           headers: { "Content-Type": optimizedFile.type },
           body: optimizedFile
         });
-        if (!response.ok) throw new Error("Inventory image upload failed.");
-        ({ storageId: imageStorageId } = await response.json());
+        if (!response.ok) {
+          throw new Error(`Image storage rejected the upload (HTTP ${response.status}).`);
+        }
+        const uploadResult = await response.json();
+        if (!uploadResult?.storageId) {
+          throw new Error("Image storage did not return a file ID. Please try the upload again.");
+        }
+        imageStorageId = uploadResult.storageId;
       }
       const image = imageStorageId
         ? undefined
@@ -386,7 +393,7 @@ export default function Dashboard({ adminToken, onLogout }) {
       setEditing(null);
       toast.push("Inventory saved.");
     } catch (error) {
-      toast.push(error.message || "Inventory could not be saved.", "error");
+      toast.push(userFacingError(error, "Inventory could not be saved."), "error");
       submitButton.disabled = false;
       submitButton.textContent = "Save Strain";
     }
@@ -446,6 +453,9 @@ export default function Dashboard({ adminToken, onLogout }) {
         inventoryIds,
         discountType: form.discountType,
         value: numberFromForm(form.value),
+        bundleQuantity: form.discountType === "bundle" ? numberFromForm(form.bundleQuantity) : undefined,
+        qualifyingPrice: form.discountType === "bundle" && form.qualifyingPrice ? numberFromForm(form.qualifyingPrice) : undefined,
+        supportsBundles: true,
         active: form.active === "on",
         startsAt,
         endsAt
@@ -453,7 +463,7 @@ export default function Dashboard({ adminToken, onLogout }) {
       setEditingPromotion(null);
       toast.push(form.active === "on" ? "Promotion saved and published live." : "Promotion saved as a draft. It will not appear on the storefront.");
     } catch (error) {
-      toast.push(error.message || "Promotion could not be saved.", "error");
+      toast.push(userFacingError(error, "Promotion could not be saved."), "error");
     }
   }
 
@@ -698,50 +708,7 @@ export default function Dashboard({ adminToken, onLogout }) {
 
       {editingPromotion && (
         <Modal title={editingPromotion._id ? "Edit Promotion" : "Add Promotion"} onClose={() => setEditingPromotion(null)}>
-          <form className="strain-form promotion-form" onSubmit={savePromotion}>
-            <label>Internal Name <input name="name" defaultValue={editingPromotion.name} placeholder="Weekend flower special" required /></label>
-            <fieldset className="promotion-flower-picker wide">
-              <legend>Flowers</legend>
-              <p className="muted">Choose between one and four flowers. The promotion applies automatically to every selected flower.</p>
-              <div className="promotion-flower-grid">
-                {(inventory || []).map(strain => {
-                  const selectedIds = editingPromotion.inventoryIds?.length ? editingPromotion.inventoryIds : [editingPromotion.inventoryId].filter(Boolean);
-                  return (
-                    <label className="promotion-flower-option" key={strain._id}>
-                      <input
-                        name="inventoryIds"
-                        type="checkbox"
-                        value={strain._id}
-                        defaultChecked={selectedIds.includes(strain._id)}
-                        onChange={event => {
-                          const checked = event.currentTarget.form.querySelectorAll('input[name="inventoryIds"]:checked');
-                          if (checked.length > 4) {
-                            event.currentTarget.checked = false;
-                            toast.push("Choose up to four flowers.", "error");
-                          }
-                        }}
-                      />
-                      <span>{strain.name}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            </fieldset>
-            <label>Discount Type
-              <select name="discountType" defaultValue={editingPromotion.discountType}>
-                <option value="percent">Percent Off</option>
-                <option value="fixed">Dollar Off Each Item</option>
-              </select>
-            </label>
-            <label>Discount Value <input name="value" type="number" step="0.01" min="0.01" max={editingPromotion.discountType === "percent" ? 100 : undefined} defaultValue={editingPromotion.value} required /></label>
-            <label className="wide">Public Headline <input name="headline" defaultValue={editingPromotion.headline} placeholder="20% off Purple Planet" required /></label>
-            <label className="wide">Public Description <textarea name="description" rows="3" defaultValue={editingPromotion.description} placeholder="Available for a limited time while supplies last." required /></label>
-            <label>Starts <input name="startsAt" type="datetime-local" defaultValue={dateTimeInputValue(editingPromotion.startsAt)} /></label>
-            <label>Ends <input name="endsAt" type="datetime-local" defaultValue={dateTimeInputValue(editingPromotion.endsAt)} /></label>
-            <label className="promotion-live-control wide"><input name="active" type="checkbox" defaultChecked={editingPromotion.active ?? true} /><span><strong>Publish this promotion live</strong><small>Required for the visitor popup, flower-menu banner, and automatic checkout discount.</small></span></label>
-            <p className="muted wide">Leaving this unchecked saves a private draft that customers cannot see. Publishing it automatically stops any other live promotion.</p>
-            <button className="primary-button wide" type="submit">Save Promotion</button>
-          </form>
+          <PromotionForm promotion={editingPromotion} inventory={inventory || []} onSubmit={savePromotion} />
         </Modal>
       )}
     </>
@@ -781,19 +748,19 @@ function PromotionTable({ promotions, search, onEdit, onToggle, onDelete }) {
     <div className="table-wrap responsive-admin-table promotion-table">
       <table>
         <thead>
-          <tr><th>Promotion</th><th>Flowers</th><th>Discount</th><th>Status</th><th>Schedule</th><th>Actions</th></tr>
+          <tr><th>Promotion</th><th>Products</th><th>Discount</th><th>Status</th><th>Schedule</th><th>Actions</th></tr>
         </thead>
         <tbody>
           {rows.map(promotion => {
             const status = promotionStatus(promotion);
-            const discount = promotion.discountType === "percent" ? `${promotion.value}% off` : `${money(promotion.value)} off each item`;
+            const discount = promotionLabel(promotion);
             const schedule = promotion.startsAt || promotion.endsAt
               ? `${promotion.startsAt ? new Date(promotion.startsAt).toLocaleString() : "Now"} – ${promotion.endsAt ? new Date(promotion.endsAt).toLocaleString() : "No end"}`
               : "No schedule";
             return (
               <tr key={promotion._id}>
                 <td data-label="Promotion"><strong>{promotion.headline}</strong><br /><span className="muted">{promotion.name}</span></td>
-                <td data-label="Flowers">{promotion.flowerName}</td>
+                <td data-label="Products">{promotion.flowerName}</td>
                 <td data-label="Discount">{discount}</td>
                 <td data-label="Status"><span className={`payment-status ${status.className}`}>{status.label}</span></td>
                 <td data-label="Schedule">{schedule}</td>
