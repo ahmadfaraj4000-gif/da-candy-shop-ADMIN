@@ -14,6 +14,7 @@ import { money } from "../lib/format.js";
 import { optimizeInventoryImage } from "../lib/imageOptimizer.js";
 import { useDebounce } from "../hooks/useDebounce.js";
 import PromotionForm from "../components/PromotionForm.jsx";
+import DeletePromotionDialog from "../components/DeletePromotionDialog.jsx";
 import { promotionLabel } from "../../promotion-pricing.js";
 
 const inventoryWeightOptions = [
@@ -227,6 +228,7 @@ export default function Dashboard({ adminToken, onLogout }) {
   const [editing, setEditing] = useState(null);
   const [editingDiscount, setEditingDiscount] = useState(null);
   const [editingPromotion, setEditingPromotion] = useState(null);
+  const [deletePromotionTarget, setDeletePromotionTarget] = useState(null);
   const [wheelMode, setWheelMode] = useState("customer");
   const [prizeWheelPrizes, setPrizeWheelPrizes] = useState(() => {
     try {
@@ -477,8 +479,8 @@ export default function Dashboard({ adminToken, onLogout }) {
   }
 
   async function handleDeletePromotion(id) {
-    if (!confirm("Delete this promotion?")) return;
     await deletePromotion({ adminToken, id });
+    setDeletePromotionTarget(null);
     toast.push("Promotion deleted.");
   }
 
@@ -590,7 +592,7 @@ export default function Dashboard({ adminToken, onLogout }) {
             <InventoryTable inventory={inventory} onEdit={setEditing} onDelete={handleDeleteStrain} />
           )}
           {activeTab === "promotions" && (
-            <PromotionTable promotions={promotions} search={debouncedSearch} onEdit={setEditingPromotion} onToggle={togglePromotion} onDelete={handleDeletePromotion} />
+            <PromotionTable promotions={promotions} search={debouncedSearch} onEdit={setEditingPromotion} onToggle={togglePromotion} onDelete={setDeletePromotionTarget} />
           )}
           {activeTab === "discounts" && (
             <DiscountCodeTable codes={discountCodes} onEdit={setEditingDiscount} onDelete={handleDeleteDiscountCode} />
@@ -646,6 +648,14 @@ export default function Dashboard({ adminToken, onLogout }) {
             </div>
           </div>
         </Modal>
+      )}
+
+      {deletePromotionTarget && (
+        <DeletePromotionDialog
+          promotion={deletePromotionTarget}
+          onDelete={handleDeletePromotion}
+          onClose={() => setDeletePromotionTarget(null)}
+        />
       )}
 
       {editing && (
@@ -766,9 +776,9 @@ function PromotionTable({ promotions, search, onEdit, onToggle, onDelete }) {
                 <td data-label="Schedule">{schedule}</td>
                 <td className="actions" data-label="Actions">
                   <div className="action-group promotion-actions">
-                    <button className="icon-button text-action" type="button" onClick={() => onEdit(promotion)}>Edit</button>
-                    <button className="icon-button text-action" type="button" onClick={() => onToggle(promotion)}>{promotion.active ? "Stop" : "Publish Live"}</button>
-                    <button className="icon-button text-action danger" type="button" onClick={() => onDelete(promotion._id)}>Delete</button>
+                    <button className="promotion-action" type="button" onClick={() => onEdit(promotion)}>Edit</button>
+                    <button className="promotion-action" type="button" onClick={() => onToggle(promotion)}>{promotion.active ? "Stop" : "Publish Live"}</button>
+                    <button className="promotion-action danger" type="button" onClick={() => onDelete(promotion)}>Delete</button>
                   </div>
                 </td>
               </tr>

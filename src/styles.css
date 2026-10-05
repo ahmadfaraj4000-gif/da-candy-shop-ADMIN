@@ -2108,3 +2108,37 @@ button:disabled {
 .promo-slice-good { fill: #5cb418; }
 
 .select-cell input[type="checkbox"] { accent-color: #5cb418; }
+
+/* Promotion actions contain text, so they must not inherit square icon sizing. */
+.promotion-table td.actions { display: table-cell; min-width: 280px; }
+.promotion-table .promotion-actions { display: flex; gap: .6rem; min-width: 0; }
+.promotion-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: .65rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #10150f;
+  color: var(--text);
+  font: inherit;
+  font-size: .85rem;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.promotion-action:hover { border-color: var(--green); background: rgba(92,180,24,.1); }
+.promotion-action.danger { color: #ff8e70; }
+.promotion-action:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+.delete-confirm button:disabled { opacity: .6; cursor: wait; }
+.promotion-live-control { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: .9rem; padding: 1rem; }
+.promotion-live-control span { min-width: 0; }
+
+@media (max-width: 720px) {
+  .promotion-table td.actions { display: block; min-width: 0; }
+  .promotion-table .promotion-actions { display: flex; flex-wrap: wrap; justify-content: flex-start; }
+  .promotion-table .promotion-action { flex: 1 0 auto; }
+}
