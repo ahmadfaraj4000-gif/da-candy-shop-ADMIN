@@ -491,7 +491,7 @@ export default function Dashboard({ adminToken, onLogout }) {
     }
     try {
       await setPromotionActive({ adminToken, id: promotion._id, active: !promotion.active });
-      toast.push(promotion.active ? "Promotion stopped and returned to Draft." : "Promotion published live on the storefront.");
+      toast.push(promotion.active ? "Promotion unpublished and returned to Draft." : "Promotion published live on the storefront.");
     } catch (error) {
       setPromotionError(userFacingError(error, "Promotion status could not be changed. Please try again."));
     }
@@ -799,7 +799,7 @@ function PromotionTable({ promotions, search, onEdit, onToggle, onDelete }) {
                 <td className="actions" data-label="Actions">
                   <div className="action-group promotion-actions">
                     <button className="promotion-action" type="button" onClick={() => onEdit(promotion)}>Edit</button>
-                    <button className="promotion-action" type="button" onClick={() => onToggle(promotion)}>{promotion.active ? "Stop" : "Publish Live"}</button>
+                    <button className="promotion-action" type="button" onClick={() => onToggle(promotion)}>{promotion.active ? "Unpublish" : "Publish Live"}</button>
                     <button className="promotion-action danger" type="button" onClick={() => onDelete(promotion)}>Delete</button>
                   </div>
                 </td>
