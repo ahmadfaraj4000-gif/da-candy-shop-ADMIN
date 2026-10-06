@@ -7,12 +7,12 @@ function dateTimeInputValue(timestamp) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-export default function PromotionForm({ promotion, inventory, onSubmit }) {
+export default function PromotionForm({ promotion, inventory, onSubmit, error }) {
   const [discountType, setDiscountType] = useState(promotion.discountType);
   const [value, setValue] = useState(promotion.value);
   const [bundleQuantity, setBundleQuantity] = useState(promotion.bundleQuantity ?? 2);
   const [qualifyingPrice, setQualifyingPrice] = useState(promotion.qualifyingPrice ?? (promotion.discountType === "bundle" ? "" : 20));
-  const selectedIds = promotion.inventoryIds?.length ? promotion.inventoryIds : [promotion.inventoryId].filter(Boolean);
+  const [selectedIds, setSelectedIds] = useState(() => promotion.inventoryIds?.length ? promotion.inventoryIds : [promotion.inventoryId].filter(Boolean));
   const preview = { discountType, value: Number(value), bundleQuantity: Number(bundleQuantity), qualifyingPrice: qualifyingPrice === "" ? undefined : Number(qualifyingPrice) };
 
   return (
@@ -41,9 +41,11 @@ export default function PromotionForm({ promotion, inventory, onSubmit }) {
       <fieldset className="promotion-flower-picker wide">
         <legend>Eligible Products</legend>
         <p className="muted">Select the products customers can choose from. Save a draft to add products later.</p>
+        <p className="muted" role="status">{inventory.filter(product => selectedIds.includes(product._id)).length} products selected. At least one is required to publish.</p>
+        {error && <p className="form-error" role="alert">{error}</p>}
         <div className="promotion-flower-grid">
           {inventory.map(product => <label className="promotion-flower-option" key={product._id}>
-            <input name="inventoryIds" type="checkbox" value={product._id} defaultChecked={selectedIds.includes(product._id)} />
+            <input name="inventoryIds" type="checkbox" value={product._id} checked={selectedIds.includes(product._id)} onChange={event => setSelectedIds(ids => event.target.checked ? [...ids, product._id] : ids.filter(id => id !== product._id))} />
             <span>{product.name}</span>
           </label>)}
         </div>

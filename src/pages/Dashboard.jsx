@@ -228,6 +228,7 @@ export default function Dashboard({ adminToken, onLogout }) {
   const [editing, setEditing] = useState(null);
   const [editingDiscount, setEditingDiscount] = useState(null);
   const [editingPromotion, setEditingPromotion] = useState(null);
+  const [promotionError, setPromotionError] = useState("");
   const [deletePromotionTarget, setDeletePromotionTarget] = useState(null);
   const [wheelMode, setWheelMode] = useState("customer");
   const [prizeWheelPrizes, setPrizeWheelPrizes] = useState(() => {
@@ -437,13 +438,24 @@ export default function Dashboard({ adminToken, onLogout }) {
     toast.push("Discount code deleted.");
   }
 
+  function openPromotion(promotion) {
+    setPromotionError("");
+    setEditingPromotion(promotion);
+  }
+
   async function savePromotion(event) {
     event.preventDefault();
+    setPromotionError("");
     const formData = new FormData(event.currentTarget);
     const form = Object.fromEntries(formData);
     const inventoryIds = [...new Set(formData.getAll("inventoryIds").map(String))];
     const startsAt = form.startsAt ? new Date(form.startsAt).getTime() : undefined;
     const endsAt = form.endsAt ? new Date(form.endsAt).getTime() : undefined;
+
+    if (form.active === "on" && !inventoryIds.length) {
+      setPromotionError("Select at least one eligible product before publishing, or uncheck Publish this promotion live to save a draft.");
+      return;
+    }
 
     try {
       await upsertPromotion({
@@ -465,16 +477,23 @@ export default function Dashboard({ adminToken, onLogout }) {
       setEditingPromotion(null);
       toast.push(form.active === "on" ? "Promotion saved and published live." : "Promotion saved as a draft. It will not appear on the storefront.");
     } catch (error) {
-      toast.push(userFacingError(error, "Promotion could not be saved."), "error");
+      setPromotionError(userFacingError(error, "Promotion could not be saved. Please try again."));
     }
   }
 
   async function togglePromotion(promotion) {
+    setPromotionError("");
+    const inventoryIds = promotion.inventoryIds?.length ? promotion.inventoryIds : [promotion.inventoryId].filter(Boolean);
+    if (!promotion.active && !inventoryIds.length) {
+      setEditingPromotion({ ...promotion, active: true });
+      setPromotionError("Select the eligible products below, then save to publish this promotion.");
+      return;
+    }
     try {
       await setPromotionActive({ adminToken, id: promotion._id, active: !promotion.active });
       toast.push(promotion.active ? "Promotion stopped and returned to Draft." : "Promotion published live on the storefront.");
     } catch (error) {
-      toast.push(error.message || "Promotion status could not be changed.", "error");
+      setPromotionError(userFacingError(error, "Promotion status could not be changed. Please try again."));
     }
   }
 
@@ -579,7 +598,7 @@ export default function Dashboard({ adminToken, onLogout }) {
             )}
             {activeTab === "inventory" && <Filters type={type} onTypeChange={setType} />}
             {activeTab === "inventory" && <button className="primary-button" onClick={() => setEditing(blankStrain)}><Plus size={18} /> Add Strain</button>}
-            {activeTab === "promotions" && <button className="primary-button" onClick={() => setEditingPromotion(blankPromotion)}><Plus size={18} /> Add Promotion</button>}
+            {activeTab === "promotions" && <button className="primary-button" onClick={() => openPromotion(blankPromotion)}><Plus size={18} /> Add Promotion</button>}
             {activeTab === "discounts" && <button className="primary-button" onClick={() => setEditingDiscount(blankDiscountCode)}><Plus size={18} /> Add Code</button>}
           </div>
           {activeTab === "orders" && (
@@ -592,7 +611,10 @@ export default function Dashboard({ adminToken, onLogout }) {
             <InventoryTable inventory={inventory} onEdit={setEditing} onDelete={handleDeleteStrain} />
           )}
           {activeTab === "promotions" && (
-            <PromotionTable promotions={promotions} search={debouncedSearch} onEdit={setEditingPromotion} onToggle={togglePromotion} onDelete={setDeletePromotionTarget} />
+            <>
+              {promotionError && !editingPromotion && <p className="form-error" role="alert">{promotionError}</p>}
+              <PromotionTable promotions={promotions} search={debouncedSearch} onEdit={openPromotion} onToggle={togglePromotion} onDelete={setDeletePromotionTarget} />
+            </>
           )}
           {activeTab === "discounts" && (
             <DiscountCodeTable codes={discountCodes} onEdit={setEditingDiscount} onDelete={handleDeleteDiscountCode} />
@@ -717,8 +739,8 @@ export default function Dashboard({ adminToken, onLogout }) {
       )}
 
       {editingPromotion && (
-        <Modal title={editingPromotion._id ? "Edit Promotion" : "Add Promotion"} onClose={() => setEditingPromotion(null)}>
-          <PromotionForm promotion={editingPromotion} inventory={inventory || []} onSubmit={savePromotion} />
+        <Modal title={editingPromotion._id ? "Edit Promotion" : "Add Promotion"} onClose={() => { setEditingPromotion(null); setPromotionError(""); }}>
+          <PromotionForm promotion={editingPromotion} inventory={inventory || []} onSubmit={savePromotion} error={promotionError} />
         </Modal>
       )}
     </>
