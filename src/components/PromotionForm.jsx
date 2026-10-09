@@ -8,6 +8,7 @@ function dateTimeInputValue(timestamp) {
 }
 
 export default function PromotionForm({ promotion, inventory, onSubmit, error }) {
+  const [headline, setHeadline] = useState(promotion.headline ?? "");
   const [discountType, setDiscountType] = useState(promotion.discountType);
   const [value, setValue] = useState(promotion.value);
   const [bundleQuantity, setBundleQuantity] = useState(promotion.bundleQuantity ?? 2);
@@ -37,7 +38,6 @@ export default function PromotionForm({ promotion, inventory, onSubmit, error })
         <label>Eligible Item Price ($, optional) <input name="qualifyingPrice" type="number" min="0.01" step="0.01" value={qualifyingPrice} onChange={event => setQualifyingPrice(event.target.value)} placeholder="Any regular price" /></label>
         <p className="muted wide">Use 20 for a deal on $20 items only. Leave blank to include every price and size of the selected products. Highest-priced eligible items are grouped first; a bundle never costs more than regular pricing.</p>
       </>}
-      <div className="wide" role="status" aria-live="polite"><strong>{promotionLabel(preview)}</strong><p className="muted">{promotionTerms(preview)}</p></div>
       <fieldset className="promotion-flower-picker wide">
         <legend>Eligible Products</legend>
         <p className="muted">Select the products customers can choose from. Save a draft to add products later.</p>
@@ -50,8 +50,14 @@ export default function PromotionForm({ promotion, inventory, onSubmit, error })
           </label>)}
         </div>
       </fieldset>
-      <label className="wide">Public Headline <input name="headline" defaultValue={promotion.headline} placeholder="Mix & match: 2 for $30" required /></label>
-      <label className="wide">Public Description <textarea name="description" rows="3" defaultValue={promotion.description} placeholder="Choose any two eligible designs. Discount applies automatically at checkout." required /></label>
+      <label className="wide">Public Headline <input name="headline" value={headline} onChange={event => setHeadline(event.target.value)} maxLength={60} placeholder="Mix & match: 2 for $30" required /></label>
+      <label className="wide">Short Description <input name="description" defaultValue={promotion.description} maxLength={100} placeholder="Your favorite designs. One sweet deal." required /></label>
+      <p className="muted wide">Keep it brief: headline up to 60 characters, description up to 100. The description appears in the pop-up.</p>
+      <div className="wide" role="status" aria-live="polite">
+        <p className="muted">Banner preview</p>
+        <strong>{headline || "Your headline"}</strong>
+        <p className="muted">{promotionLabel(preview)} · {promotionTerms(preview)}</p>
+      </div>
       <label>Starts <input name="startsAt" type="datetime-local" defaultValue={dateTimeInputValue(promotion.startsAt)} /></label>
       <label>Ends <input name="endsAt" type="datetime-local" defaultValue={dateTimeInputValue(promotion.endsAt)} /></label>
       <label className="promotion-live-control wide"><input name="active" type="checkbox" defaultChecked={promotion.active ?? true} /><span><strong>Publish this promotion live</strong><small>Shows the visitor pop-up, menu banner, and automatic checkout discount.</small></span></label>

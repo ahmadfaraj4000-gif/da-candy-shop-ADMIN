@@ -2,7 +2,7 @@
 /** @typedef {{inventoryId?: string, price: number, quantity: number}} PromotionItem */
 
 const cents = value => Math.round(Number(value) * 100);
-const money = value => `$${Number(value).toFixed(2)}`;
+const money = value => `$${Number(value).toFixed(2).replace(/\.00$/, "")}`;
 
 /** @param {Promotion} promotion */
 export function promotionLabel(promotion) {
@@ -13,9 +13,8 @@ export function promotionLabel(promotion) {
 
 /** @param {Promotion} promotion */
 export function promotionTerms(promotion) {
-  if (promotion.discountType !== "bundle") return "Applies to selected products.";
-  const price = promotion.qualifyingPrice === undefined ? "" : ` at ${money(promotion.qualifyingPrice)} each`;
-  return `Choose ${promotion.bundleQuantity} eligible items${price}. Same or mixed designs. Each complete bundle qualifies; extra items are regular price.`;
+  if (promotion.discountType !== "bundle" || promotion.qualifyingPrice === undefined) return "Selected items";
+  return `Selected ${money(promotion.qualifyingPrice)} items`;
 }
 
 /** @param {Promotion} promotion @param {PromotionItem} item */
